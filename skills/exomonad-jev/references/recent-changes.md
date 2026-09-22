@@ -36,5 +36,5 @@ questions over one state, use `J.ask` with a packet and read fields from `J.answ
 `J.settle` checks the winner's distribution and dispatches through the handler its
 label names; its doubt and the transport failure are separate cases. A confident
 unresolved answer remains unresolved. `J` is present where the workspace pins the
-Jev library. Use `shoal-jev` for per-row batteries, speculative questions, and
+Jev library. Use `exomonad-jev` for per-row batteries, speculative questions, and
 other patterns.

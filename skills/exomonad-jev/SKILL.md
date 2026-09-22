@@ -1,5 +1,5 @@
 ---
-name: shoal-jev
+name: exomonad-jev
 description: Ask Jev, the cheap judgment model, inside a Haskell cell — packets, per-item batteries, calibrated alternatives, and gating an action on a policy. Load when a cell needs a semantic decision (triage, routing, relevance, a review gate) instead of another model round.
 ---
 
@@ -16,7 +16,7 @@ Everything named in this skill is **shipped**: `J.ask`, `J.ask1`, `J.askWith`,
 `J.resolvedModel`, `J.lenient`, `J.careful`, `J.strict`. The one exception is
 the **effect type** `Jev`, which a record actor's row must name and which is not
 re-exported by the workbench surface: `import Tidepool.Effects.Core (Jev)`.
-Nothing from `exomonad/examples/workspace/.shoal/Project` appears here.
+Nothing from `exomonad/examples/workspace/.exomonad/Project` appears here.
 
 `import qualified Jev.Operators as J` is in scope; `:=` and `:&` read
 unqualified.
@@ -333,7 +333,7 @@ confidence, `J.resolvedModel`, and the action taken — and give the record one
 `Call` the owner reads the state through. A judgment nobody can inspect
 afterwards is the one failure mode that costs more than the turn it saved: the
 whole point of routing in Haskell is that the root can read what was decided
-without re-deriving it. `shoal-orchestrate` is that pattern written out.
+without re-deriving it. `exomonad-orchestrate` is that pattern written out.
 
 Not executable on its own: it needs a live child to observe.
 

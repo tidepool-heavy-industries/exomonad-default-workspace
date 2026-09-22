@@ -1,6 +1,6 @@
 ---
-name: shoal-review
-description: Commission independent review and repair of exact Shoal candidates using Project.Work, and return typed review decisions without copying full task histories.
+name: exomonad-review
+description: Commission independent review and repair of exact Exomonad candidates using Project.Work, and return typed review decisions without copying full task histories.
 ---
 
 Use review when independent judgment helps the owning integration decision.

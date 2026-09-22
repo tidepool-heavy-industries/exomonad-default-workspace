@@ -1,5 +1,5 @@
 ---
-name: shoal-orchestrate
+name: exomonad-orchestrate
 description: Put the implement/review/repair/merge loop inside one record actor so a child's outcome routes itself instead of costing the root a turn. Load when a root is relaying findings, collecting artifacts, or re-requesting review by hand.
 ---
 
@@ -19,14 +19,14 @@ answer, and then spent nine model turns and two and a half minutes writing
 `tryMerge`, `cargo test` and `git reset --hard HEAD^` by hand — reimplementing,
 badly, the outcome it had just been shown. Starting that actor was four calls.
 
-**This is a pattern to copy into your own `.shoal/Project`, not a library.**
+**This is a pattern to copy into your own `.exomonad/Project`, not a library.**
 Nothing below is importable. Paste it, rename it, cut the seams you do not
-need. `exomonad/examples/workspace/.shoal/checks/review-continuation.hs` is the
+need. `exomonad/examples/workspace/.exomonad/checks/review-continuation.hs` is the
 executable precedent for the review → repair → re-review half of it.
 
 Availability of the names used here:
 
-- **Shipped** — in every Shoal cell: `R.definition`, `R.start`, `R.client`,
+- **Shipped** — in every Exomonad cell: `R.definition`, `R.start`, `R.client`,
   `R.send`, `R.call`, `R.on`, `R.settlement`, `R.self`, `R.finish`, `R.withWorktree`,
   `LocalEffects`, `ActorSpec`, `Handler`, `Actor.Selected`, `knownEffects`,
   `Replies`, `Actor`, `Notifications`, `Forks`, `unfold`, `child`, `coding`,
@@ -41,7 +41,7 @@ Availability of the names used here:
 - **Project-authored** — you define these, they are shown here so you can copy
   them: `Contract`, `GateState`, `Wake`, `Gate`, `GateEffects`, `gateFor`,
   `gateView`.
-- **Example-only** — present in `examples/shoal-workspace`, absent from a fresh
+- **Example-only** — present in `exomonad/examples/workspace`, absent from a fresh
   project: `coordinationActor`, `CoordinationEffects`, `Outcome`, `Candidate`.
   This skill does not use them. Confirm any name with `lookup` before you
   depend on it; a skill's example is not proof the name is installed.
@@ -158,8 +158,8 @@ holding it with `R.withWorktree`; every gate `R.call`s that integrator, whose
 mailbox serialises each merge-and-check:
 
 ```
-Right tree <- createWorktree (fromRef "shoal/integration" "integration")
-integrator <- R.start (integratorFor (worktreeId tree) (Just "shoal/integration"))
+Right tree <- createWorktree (fromRef "exomonad/integration" "integration")
+integrator <- R.start (integratorFor (worktreeId tree) (Just "exomonad/integration"))
 gate <- R.start (gateFor contract worker (Integration integrator))
 ```
 
@@ -258,6 +258,6 @@ map (T.pack . show) decisions
 Keep the detail short and literal. A wake that needs the root to reconstruct
 what happened costs the turn the gate was written to save.
 
-Load `shoal-define-actors` for the record syntax, `shoal-jev` for the packet
-and policy rules, and `shoal-unfold` for reading a child's commit from your own
+Load `exomonad-define-actors` for the record syntax, `exomonad-jev` for the packet
+and policy rules, and `exomonad-unfold` for reading a child's commit from your own
 Git view.

@@ -1,5 +1,5 @@
 ---
-name: shoal-agent-spec
+name: exomonad-agent-spec
 description: Use when you want your own hosted tools, or code that runs after every tool call to annotate or prune its result, and when editing and reloading them inside a live session.
 ---
 
@@ -11,7 +11,7 @@ edit it with file tools, then call `reload_agent_spec`. Nothing reloads on save.
 
 The module is `AgentSpec` and the value is `agentSpec`. It is the first
 `AgentSpec.hs` in your own source roots, in the order your cells resolve
-modules: your checkout's `.shoal/` roots first, then the run's. A workspace may
+modules: your checkout's `.exomonad/` roots first, then the run's. A workspace may
 name another entry with `[haskell] spec`; `[haskell] tools` still names a bare
 tools record. `status` with `view: "detailed"` says which rule matched, which
 file was read, and which revision is installed.
@@ -112,7 +112,7 @@ will not find these names; they are listed here instead.
 | `Pruned text (toolResultHandle result)` | `text` marked as a selection; the whole result is bound as that handle, a `Text`, for a later cell |
 
 The slot runs in your own resident machine with your own effects, so it may
-read recent turns (`reflect n`, topic `reflect`), ask Jev (`shoal-jev`), or run
+read recent turns (`reflect n`, topic `reflect`), ask Jev (`exomonad-jev`), or run
 a command. Name the effects it uses in its signature, for example
 `(Member Reflect effects, Member Jev effects) => ToolCall -> ToolResult -> Eff effects Annotation`,
 and give `agentSpec` the same constraints. The slot is shown the result as the

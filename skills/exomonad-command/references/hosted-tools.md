@@ -1,6 +1,6 @@
 # Defining compiled tools
 
-Use [shoal-agent-spec](../../shoal-agent-spec/SKILL.md) for the canonical tools
+Use [exomonad-agent-spec](../../exomonad-agent-spec/SKILL.md) for the canonical tools
 record and reload example. Nest `Shell.ShellTools` to retain `bash`, `write_stdin`,
 `read_output`, and `cancel_command`; add project tools only for new semantics.
 

@@ -1,6 +1,6 @@
 ---
-name: shoal-fork
-description: Compose Shoal implementation children in resident Haskell, choosing inherited or fresh context and collecting typed progress/results. Use when decomposing work with the Project coordination package.
+name: exomonad-fork
+description: Compose Exomonad implementation children in resident Haskell, choosing inherited or fresh context and collecting typed progress/results. Use when decomposing work with the Project coordination package.
 ---
 
 Use the resident Haskell tool. The selected package imports Project.Types, Work,
@@ -31,7 +31,7 @@ independent review; descendants within a focused subtree can inherit.
 Compose independent children with `((,) <$> child a <*> child b)` inside one
 `unfold`. Keep shared-contract and integration work with their parent. Use
 `child` when only a final reply is needed; it does not install `reportProgress`.
-Retain returned handles. Follow progress/results with the shoal-coordinate skill.
+Retain returned handles. Follow progress/results with the exomonad-coordinate skill.
 
 Messages are for another model: cite the shared plan and send only the assignment
 or changed facts it cannot recover. Do not reconstruct the full plan in every Task.

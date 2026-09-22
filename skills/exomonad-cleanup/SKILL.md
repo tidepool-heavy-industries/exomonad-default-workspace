@@ -1,6 +1,6 @@
 ---
-name: shoal-cleanup
-description: Retire Shoal workers and fork groups deliberately — inspect a cleanup plan, execute it, and read the two-phase stop outcomes. Load before retiring anything, or when a stop reports that resources are still retained.
+name: exomonad-cleanup
+description: Retire Exomonad workers and fork groups deliberately — inspect a cleanup plan, execute it, and read the two-phase stop outcomes. Load before retiring anything, or when a stop reports that resources are still retained.
 ---
 
 Cleanup is a decision, not housekeeping. Keep valuable specialists; retire a

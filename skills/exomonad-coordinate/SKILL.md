@@ -1,6 +1,6 @@
 ---
-name: shoal-coordinate
-description: Split a shared Shoal Task into inherited children, then route and inspect progress and replies with Project.Routing actors.
+name: exomonad-coordinate
+description: Split a shared Exomonad Task into inherited children, then route and inspect progress and replies with Project.Routing actors.
 ---
 
 For a worker launched with `childWithProgress @WorkProgress`, its current request
@@ -61,7 +61,7 @@ Retain the cleanup receipt; a blocked step leaves that work with its current own
 Do not turn it into a stop/retry loop.
 
 For custom typed joins or automatic request continuations, load
-`shoal-define-actors`. Routine routing stays in Haskell; wake the owning Sol only
+`exomonad-define-actors`. Routine routing stays in Haskell; wake the owning Sol only
 for engineering decisions, actionable failures or integration work.
 
 ## Split one shared Task

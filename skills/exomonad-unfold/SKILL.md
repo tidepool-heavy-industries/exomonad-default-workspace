@@ -1,6 +1,6 @@
 ---
-name: shoal-unfold
-description: Admit several Shoal children in one applicative unfold, join their settlements in one watch, and read a child's committed work from the parent's own Git view. Load when decomposing work across children and inspecting what they produced.
+name: exomonad-unfold
+description: Admit several Exomonad children in one applicative unfold, join their settlements in one watch, and read a child's committed work from the parent's own Git view. Load when decomposing work across children and inspecting what they produced.
 ---
 
 `unfold` admits persistent context forks and returns their handles now. The
@@ -102,7 +102,7 @@ check over uncommitted files does not establish a submitted candidate.
 
 `projectHead` selects live root source; `boundHead` requires an allocated child
 worktree. Admission checkpoints eligible edits on the source branch, including
-root main, without hooks or checks. Runtime `.shoal/`, configured exclusions, and
+root main, without hooks or checks. Runtime `.exomonad/`, configured exclusions, and
 recognized caches are excluded. Git failure preserves working files and refuses
 the fork. A busy-source fallback uses existing HEAD and reports omitted edits.
 Use `atRef` for an explicit committed baseline; inspect the admission receipt.
@@ -111,7 +111,7 @@ Use `request` for new work on a retained worker, `updateRequest` for clarificati
 of its active assignment, and `sendMessage` for information. Inspect the accepted
 update with `pollRequestUpdate`; admission, presentation, and checked incorporation
 remain separate evidence. `doc request` covers refusal and uncertain delivery.
-Use `shoal-cleanup` for `stopAgent`, `planCleanup`, and `executeCleanup`.
+Use `exomonad-cleanup` for `stopAgent`, `planCleanup`, and `executeCleanup`.
 
 Assignment values and explicit worktree seeds keep ordinary Haskell value
 semantics and are not reevaluated at startup. A later failure in the cell stops

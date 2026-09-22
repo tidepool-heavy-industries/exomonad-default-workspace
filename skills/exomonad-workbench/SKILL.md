@@ -1,5 +1,5 @@
 ---
-name: shoal-workbench
+name: exomonad-workbench
 description: Write Haskell notebook cells that typecheck the first time — Text vs String, Label vs Text, annotating polymorphic expressions, keeping observations small, multi-line operator chains, and shell arguments. Load when a cell was rejected or a display was truncated.
 ---
 
@@ -11,10 +11,10 @@ mutually recursive and visible to every statement, but a declaration cannot
 depend on a binding a statement in the same cell introduces. Every expression
 displays its value; declarations and bindings persist into later cells.
 
-Everything named in this skill is **shipped**: it is in scope in any Shoal cell
+Everything named in this skill is **shipped**: it is in scope in any Exomonad cell
 with no project module and no import. The two exceptions are marked where they
 appear — `Jev` and `Commands` (effect types from `Tidepool.Effects.Core`) need
-an import line. Names from `exomonad/examples/workspace/.shoal/Project`, such as
+an import line. Names from `exomonad/examples/workspace/.exomonad/Project`, such as
 `coordinationActor`, `Outcome` and `Candidate`, are **example-only** and are
 not used here.
 
@@ -175,11 +175,11 @@ the `Text` back out by matching:
 
 ```haskell
 let onto = mkBranchName "integration/tags"
-let from = GitRef "shoal/integration"
+let from = GitRef "exomonad/integration"
 (case onto of BranchName b -> b, case from of GitRef ref -> ref)
 ```
 
-`atRef (GitRef "shoal/integration")` is the deliberate committed seed for a
+`atRef (GitRef "exomonad/integration")` is the deliberate committed seed for a
 fork; `projectHead` and `boundHead` are the live ones. If your build carries
 `IsString` for these types, a bare literal works too — the constructor form
 works either way.
@@ -192,7 +192,7 @@ not the text, and every later use is a type error a `T.pack` cannot rescue.
 Bind it, and pattern-match the success in the bind:
 
 ```haskell
-Right src <- readFile ".shoal/config.toml"
+Right src <- readFile ".exomonad/config.toml"
 T.take 200 src
 ```
 

@@ -1,5 +1,5 @@
 ---
-name: shoal-command
+name: exomonad-command
 description: Use when composing commands as Haskell values, recovering retained output, controlling PTY/stdin, or routing command completion. Ordinary shell calls use the direct tool schemas without loading this skill.
 ---
 
@@ -181,7 +181,7 @@ terminal event, including attachment after completion. To continue automatically
    stdout alone is not a complete diagnostic bundle for commands using stderr.
 5. Retain the result and finish the collector when its obligations are settled.
 
-Use `shoal-define-actors` for handler construction. Captured handles do not
+Use `exomonad-define-actors` for handler construction. Captured handles do not
 transfer authority.
 
 For project-authored direct tools, see [Defining compiled tools](references/hosted-tools.md).

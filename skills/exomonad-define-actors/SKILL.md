@@ -1,6 +1,6 @@
 ---
-name: shoal-define-actors
-description: Define typed Haskell actors in a resident Shoal session for custom joins, stateful routing and automatic continuations. Load when Project.Routing's existing collectors do not express the required coordination.
+name: exomonad-define-actors
+description: Define typed Haskell actors in a resident Exomonad session for custom joins, stateful routing and automatic continuations. Load when Project.Routing's existing collectors do not express the required coordination.
 ---
 
 One record describes private state, public calls and fixed source handlers. The
@@ -11,18 +11,18 @@ request admission and lifetime.
 
 Availability of the names below:
 
-- **Shipped** — in every Shoal cell: `R.definition`, `R.start`, `R.client`,
+- **Shipped** — in every Exomonad cell: `R.definition`, `R.start`, `R.client`,
   `R.send`, `R.call`, `R.on`, `R.settlement`, `R.progress`, `R.lifecycle`,
   `Cmd.completion`, `R.self`, `R.sender`, `R.finish`, `R.replace`,
   `R.forwardResult`, `requestWithProgressInto`, `LocalEffects`, `ActorSpec`,
   `Handler`, `Actor.Selected`, `knownEffects`, `Replies`, `Actor`,
   `Notifications`.
-- **Example-only** — defined in `exomonad/examples/workspace/.shoal/Project`, and
+- **Example-only** — defined in `exomonad/examples/workspace/.exomonad/Project`, and
   **not in scope in a fresh project**: `coordinationActor` and
   `CoordinationEffects` (`Project.Actors`), `Outcome` and `Candidate`
   (`Project.Types`). The examples here use them because this workspace ships
   them; the last section writes the same actor without them, and a project
-  writes its own wrapper the same way in its own `.shoal`.
+  writes its own wrapper the same way in its own `.exomonad`.
 
 Confirm a name with `lookup` before depending on it. A skill's example is
 evidence of a pattern, not proof that the name is installed for you.
@@ -127,7 +127,7 @@ coordinationActor name = R.definition name (Actor.Selected knownEffects)
 type CoordinationEffects api = LocalEffects api '[Replies, Actor, Notifications]
 ```
 
-In a fresh project, write the same two lines into your own `.shoal/Project`, or
+In a fresh project, write the same two lines into your own `.exomonad/Project`, or
 write the shipped call out in the cell. Either way the row must be **pinned by a
 signature**: `knownEffects` is polymorphic in the row, so `R.definition` on its
 own is ambiguous. Pin it with `:: ActorSpec MyActor MyEffects`, and give any
@@ -159,7 +159,7 @@ one without resolves to research, and a row that needs `WorktreeIntegration`
 only sits under the first. The host admits at most one worktree per actor.
 
 ```
-Right tree <- createWorktree (fromRef "shoal/integration" "integration")
+Right tree <- createWorktree (fromRef "exomonad/integration" "integration")
 integrator <- R.start (R.withWorktree (worktreeId tree) integratorDefinition)
 ```
 
@@ -169,5 +169,5 @@ re-exported by the workbench surface — a cell naming them needs
 `import Tidepool.Effects.Core (Jev, Commands)` before the row. The row is still
 checked against the launching actor's ceiling, so asking for more than the
 creator holds is refused at start, not silently granted. When the loop this
-record carries is implement → review → repair → merge, load `shoal-orchestrate`
+record carries is implement → review → repair → merge, load `exomonad-orchestrate`
 for the whole shape.
