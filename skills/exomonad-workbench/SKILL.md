@@ -14,7 +14,7 @@ displays its value; declarations and bindings persist into later cells.
 Everything named in this skill is **shipped**: it is in scope in any Exomonad cell
 with no project module and no import. The two exceptions are marked where they
 appear — `Jev` and `Commands` (effect types from `Tidepool.Effects.Core`) need
-an import line. Names from `exomonad/examples/workspace/.exomonad/Project`, such as
+an import line. Names from `.exomonad/workspace/Project`, such as
 `coordinationActor`, `Outcome` and `Candidate`, are **example-only** and are
 not used here.
 
@@ -60,7 +60,7 @@ campaign, fork-group, request and watch labels.
 
 ```haskell
 let laneLabel = "consumer-tests" :: Label
-let dynamic = labelFromText ("lane-" <> T.pack (show (2 :: Int)))
+let dynamic = labelFromText ("work-" <> T.pack (show (2 :: Int)))
 (laneLabel, dynamic)
 ```
 
@@ -144,7 +144,7 @@ has to land on the binding, not beside it.
 ```haskell
 severity :: Int -> Text
 severity n = if n > 2 then "high" else "low"
-let inline :: Int -> Text; inline n = "lane " <> T.pack (show n)
+let inline :: Int -> Text; inline n = "work " <> T.pack (show n)
 map severity [1, 3 :: Int] <> map inline [7 :: Int]
 ```
 
