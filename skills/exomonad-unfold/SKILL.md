@@ -11,8 +11,8 @@ shared contract and the integration with their parent.
 
 ```haskell
 let group = batch "corpus" "fanout"
-let domainLabel = "domain" :: Label
-let consumerLabel = "consumer-tests" :: Label
+let domainLabel = [label|domain|]
+let consumerLabel = [label|consumer-tests|]
 let domainPlan = "Add the shared item type and its tests." :: Text
 let consumerPlan = "Update the readers of that type." :: Text
 workers <- unfold group $
