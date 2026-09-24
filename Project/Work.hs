@@ -186,7 +186,7 @@ commitReviewContext review = Text.unlines
 reviewCommit
   :: (Member Forks effects, Member Replies effects, Member AgentInspection effects, Subset CodingEffects effects)
   => Label -> GitOid -> Text -> [Text] -> RepairOwner -> Eff effects (Response (Outcome ReviewDecision), Progress WorkProgress)
-reviewCommit label commit accept owned owner = unfold (batch (labelCampaign label) "review") $ childWithProgress @WorkProgress @(Outcome ReviewDecision) $
+reviewCommit reviewLabel commit accept owned owner = unfold (batch (labelCampaign reviewLabel) "review") $ childWithProgress @WorkProgress @(Outcome ReviewDecision) $
   withInstructions (projectPrompt "review") $ withContext (selected commitReviewContext) $
   withModel "luna" $ withEffort Medium $
   coding (atRef (GitRef (renderGitOid commit)))
