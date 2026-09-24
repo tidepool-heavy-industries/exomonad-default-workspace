@@ -158,6 +158,11 @@ parentAgent >>= \case
   Just parent -> void (sendMessage parent "starting the migration; will check back before merging")
 ```
 
+To check whether a lead's children (or their own children) have started, read
+`Tidepool.Actors.Observe`'s `creationTree` (self identity from `actorContext`) over
+`snapshot`, the same registry `observeAgent` reads, filtered to `RosterRunning` for
+just the live ones.
+
 Assignment values and explicit worktree seeds keep ordinary Haskell value
 semantics and are not reevaluated at startup. A later failure in the cell stops
 its suffix but preserves the unfolds that already succeeded. `doc unfold` holds
