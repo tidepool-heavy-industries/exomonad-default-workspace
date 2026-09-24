@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -71,7 +72,7 @@ import Jev.Operators (Packet ((:=), (:&)), Settled (Settled))
 import qualified Tidepool.Actor as Actor
 import qualified Tidepool.Actor.Record as R
 import qualified Tidepool.Command as Cmd
-import Tidepool.Actors.Exomonad
+import Tidepool.Actors.Exomonad hiding (record)
 import Tidepool.Aeson.Value (object, (.=))
 import Tidepool.Effects.Core (GitRef (..), Jev, Commands)
 import Tidepool.Worktree (renderGitOid)
@@ -151,7 +152,7 @@ data ReviewState = ReviewState
   , reviewMerged :: Maybe GitOid
   , reviewCheck :: Maybe CheckResult
   , reviewHistory :: [HistoryEntry]
-  , reviewNotices :: [Notice]
+  , reviewNotices :: [ReviewNotice]
   , reviewReceipts :: [Either NotificationError NotificationReceipt]
   }
 
@@ -241,7 +242,7 @@ notify'
   -> Handler ReviewState ReviewEffects ()
 notify' kind candidate condition source index suggested = do
   state <- R.get
-  let notice = Notice
+  let notice = ReviewNotice
         { noticeKind = kind
         , noticeTask = contractTask (reviewContract state)
         , noticeCandidate = candidate
@@ -702,7 +703,7 @@ startReviewer own _contract brief oid = do
     withEffort Medium $
     narrowed @ReviewerEffects knownEffects
       (inspectionPolicy (atRef (GitRef (renderGitOid oid))))
-      ((assignment "review" brief) { report = Silent })
+      ((assignment [label|review|] brief) { report = Silent })
   void (R.forwardResult reviewer (reviewSettled own))
   void (record "review" (Just oid) RanHere "reviewer_admitted"
     ("read-only luna at " <> shortOid oid) "await the verdict")
@@ -857,7 +858,7 @@ requestRepair own oid findings = do
         RanHere index "take the task over, or raise the budget"
     else do
       attempt <- requestWith (responseActor (reviewWorker state))
-        ((assignment "repair" RepairTask
+        ((assignment [label|repair|] RepairTask
             { repairTaskName = contractTask contract
             , repairCandidate = renderGitOid oid
             , repairFindings = findings

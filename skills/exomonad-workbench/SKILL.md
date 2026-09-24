@@ -30,6 +30,18 @@ Leading `LANGUAGE` and `OPTIONS_GHC` pragmas apply to this cell only and must
 come first; imports persist. No pragmas or imports after executable source, no
 colon commands, no `:{` / `:}`.
 
+## Look up a name from a cell
+
+The hosted `lookup` tool is not a Haskell function. In a cell, use the raw
+effect with the default request constructor:
+
+```haskell
+lookupRaw (lookupRequest ["Cmd.quiet"])
+```
+
+`lookupRequest` uses the shipped hosted tool's defaults; use `LookupRequest`
+directly when a request needs custom discovery, view, candidate limit, or references.
+
 ## Text, not String
 
 `Text` is the currency of this workbench: paths, labels, output, messages. The
@@ -52,15 +64,14 @@ let unreachable path = error ("no owner for " <> path) :: Text
 ("annotated, and never forced" :: Text)
 ```
 
-`assignment` takes a validated `Label`, not free `Text`. A literal validates
-when it is forced, so `assignment "revision" task` reads naturally, but a
-`Text` computed at runtime needs `labelFromText`, which keeps a validation
-failure as a value instead of throwing inside a launch. The same applies to
-campaign, fork-group, request and watch labels.
+`assignment` takes a validated `Label`, not free `Text`. Static assignment
+labels use `[label|revision|]`, which is checked at compile time. A `Text`
+computed at runtime needs `labelFromText`; handle its `Either` before launch.
+Campaign, fork-group and watch labels have their own constructors and validators.
 
 ```haskell
-let laneLabel = "consumer-tests" :: Label
-let dynamic = labelFromText ("lane-" <> T.pack (show (2 :: Int)))
+let laneLabel = [label|consumer-tests|]
+let dynamic = labelFromText ("work-" <> T.pack (show (2 :: Int)))
 (laneLabel, dynamic)
 ```
 
@@ -73,14 +84,15 @@ the cell runs. Bind the short preview, not the file:
 ```haskell
 previews <- forM ["README.md", "Justfile"] $ \path ->
   (path,) . fmap (T.take 2000) . Cmd.stdout
-    <$> Cmd.quiet (Cmd.run (Cmd.withArguments [path] [bash|sed -n '1,40p' -- "$1"|]))
+    <$> Cmd.run (Cmd.withArguments [path] [bash|sed -n '1,40p' -- "$1"|])
 map fst previews
 ```
 
 The preview retains read failures as `Left`; fetch complete text before judgments
 that require it. Display the keys and keep the previews for the next statement. A truncated display offers `cellDisplay.more`, which reads
-the next retained page without repeating the effect, and `Cmd.quiet action`
-suppresses routine command presentation when only the data matters.
+the next retained page without repeating the effect. Bound command results show
+a compact summary while retaining the full observation; `Cmd.quiet action`
+suppresses routine presentation for unbound commands when only data matters.
 
 ## Multi-line chains
 
@@ -144,7 +156,7 @@ has to land on the binding, not beside it.
 ```haskell
 severity :: Int -> Text
 severity n = if n > 2 then "high" else "low"
-let inline :: Int -> Text; inline n = "lane " <> T.pack (show n)
+let inline :: Int -> Text; inline n = "work " <> T.pack (show n)
 map severity [1, 3 :: Int] <> map inline [7 :: Int]
 ```
 
@@ -180,7 +192,8 @@ let from = GitRef "exomonad/integration"
 ```
 
 `atRef (GitRef "exomonad/integration")` is the deliberate committed seed for a
-fork; `projectHead` and `boundHead` are the live ones. If your build carries
+fork; `projectHead` and `currentCheckout` are the live ones. `currentCheckout`
+resolves for the executing actor. If your build carries
 `IsString` for these types, a bare literal works too — the constructor form
 works either way.
 

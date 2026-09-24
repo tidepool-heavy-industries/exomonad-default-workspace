@@ -33,8 +33,14 @@ its receipt distinguishes the request from terminal outcome and cleanup. Repeate
 close/cancel is safe; cancellation preserves an already-finished outcome.
 `read_output` with that ID and `stream: "Stderr"`
 reads diagnostics from the beginning; continue at the returned `next_offset`.
+An inherited job can be inspected with `Cmd.status`, `Cmd.await`, `Cmd.output`,
+and positioned reads without moving the owner's display cursor. Input, EOF,
+resize, and cancellation remain with the owner. A fresh command constructed
+from an inherited helper runs in the calling actor's checkout; an explicit
+directory stays fixed.
 Recovery reads are contiguous, with an 8 KiB default display budget;
-`max_output_bytes` selects 1024..32768 bytes including metadata. They never use a
+`max_output_bytes` clamps into 1024..32768 bytes including metadata; any positive
+value is accepted. They never use a
 head/tail preview. Positions are original bytes, even for lossy UTF-8.
 None of these operations reruns the command. A finished nonzero exit is a command
 result; inspect its diagnostics. Terminal receipts always show cleanup separately.
@@ -62,15 +68,18 @@ result <- Cmd.run [bash|git status --short|]
 let changed = T.lines <$> Cmd.stdout result
 ```
 
-Output appears automatically, including for a bound result. The result remains
-available as Haskell data; displaying it again does not execute the command.
+An unbound command statement shows its observation. A command result bound in a
+cell shows a compact job, exit-status and stream-byte summary; the complete
+observation remains available through the binding. Displaying or reading it
+again does not execute the command.
 Inside an effectful block, `print value` emits bounded `Display` output in execution
 order, including output before a later failure. It uses the existing Console effect;
 it is not Prelude's `Show`-based IO print. State-machine actors log this output without
 waking a model. Large values still need projections or explicit pages.
-Use `Cmd.quiet action` when only the data matters. Quiet is scoped to that action
-and does not hide a stopped computation or its recovery receipt. Nonzero process
-exits remain in the retained result even when routine presentation is quiet.
+Use `Cmd.quiet action` when an unbound command's observation is unnecessary, or
+when suppressing routine presentation inside a larger effectful computation.
+Quiet is scoped to that action and does not hide a stopped computation or its
+recovery receipt. Nonzero process exits remain in the retained result.
 
 ```haskell
 let changed = T.lines <$> Cmd.stdout result
@@ -181,7 +190,7 @@ terminal event, including attachment after completion. To continue automatically
    stdout alone is not a complete diagnostic bundle for commands using stderr.
 5. Retain the result and finish the collector when its obligations are settled.
 
-Use `exomonad-define-actors` for handler construction. Captured handles do not
-transfer authority.
+Use `exomonad-define-actors` for handler construction. Captured jobs permit
+inspection while available; they do not transfer command control.
 
 For project-authored direct tools, see [Defining compiled tools](references/hosted-tools.md).

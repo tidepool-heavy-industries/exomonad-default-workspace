@@ -11,8 +11,8 @@ shared contract and the integration with their parent.
 
 ```haskell
 let group = batch "corpus" "fanout"
-let domainLabel = "domain" :: Label
-let consumerLabel = "consumer-tests" :: Label
+let domainLabel = [label|domain|]
+let consumerLabel = [label|consumer-tests|]
 let domainPlan = "Add the shared item type and its tests." :: Text
 let consumerPlan = "Update the readers of that type." :: Text
 workers <- unfold group $
@@ -39,7 +39,7 @@ unavailable dependency should fail the watch, and `awaitAnySettled` to wake on
 the first. Register the watch, then end the model round; a wake is a reason to
 inspect retained handles, not proof of success.
 
-## The child's checkout is not yours to read
+## Observe a child's submission
 
 A `Response` carries an immutable launch receipt on its launch request, and
 that receipt's `cwd` names the child's own checkout. **It is not a path the
@@ -47,8 +47,9 @@ parent can read while the child lives.** The child owns that worktree; its
 contents are mid-edit, and a path that resolves in your shell is a different
 directory or a stale one. Nothing about holding the handle grants file access.
 
-What you may use is the identity in the receipt — the branch and the commit —
-resolved against the repository from your own view:
+Use the identity in the receipt — the branch and the commit — resolved against
+the repository from your own view. Typed worktree observations are also readable
+through an inherited handle while its checkout remains available:
 
 ```haskell
 let launch = launchedWorktree <$> responseAdmission worker
@@ -82,8 +83,26 @@ either (const "submission not visible from here") (T.take 2000) statOut
 A commit the parent cannot resolve means the child has not checkpointed it yet,
 not that the work is missing; poll the response rather than guessing at paths.
 `observeSubmission`, `worktreeBranch` and `worktreeHead` are the typed
-equivalents when you hold a worktree handle, and `tryMerge` integrates a
-submission once you have decided to.
+equivalents when you hold a worktree handle. After checking the observed
+candidate, merge its exact submitted head into your managed integration tree:
+
+```haskell
+mergeObserved :: Member WorktreeIntegration effects
+  => WorktreeHandle -> WorktreeEvidence
+  -> Eff effects (Maybe (Either WorktreeError MergeOutcome))
+mergeObserved integrationTree evidence = case evidence of
+  Just (WorktreeObserved _ _ observation) -> Just <$> tryMerge MergeRequest
+    { mergeSourceHead = headOid (submittedHead observation)
+    , mergeSourceWorktree = observedWorktreeId observation
+    , mergeSourceBranch = Nothing
+    , mergeTargetWorktree = worktreeId integrationTree
+    , mergeMessage = "Integrate reviewed submission"
+    , mergeAdvance = Nothing
+    }
+  _ -> pure Nothing
+```
+
+The `Nothing` branch means there is no submitted candidate to merge.
 
 ## Artifacts travel in the reply
 
@@ -100,18 +119,35 @@ check over uncommitted files does not establish a submitted candidate.
 
 ## Source admission and follow-up
 
-`projectHead` selects live root source; `boundHead` requires an allocated child
-worktree. Admission checkpoints eligible edits on the source branch, including
+`currentCheckout` selects the executing actor's checkout: root project source or
+child's bound worktree. `projectHead` selects the project source explicitly.
+Admission checkpoints eligible edits on the source branch, including
 root main, without hooks or checks. Runtime `.exomonad/`, configured exclusions, and
-recognized caches are excluded. Git failure preserves working files and refuses
-the fork. A busy-source fallback uses existing HEAD and reports omitted edits.
+recognized caches are excluded. Git checkpoint failure preserves working files
+and refuses the fork. A busy native source uses existing committed HEAD and
+reports omitted edits. An optional overlay capture that is busy or unavailable
+uses checkpointed HEAD and reports its omission.
 Use `atRef` for an explicit committed baseline; inspect the admission receipt.
 
 Use `request` for new work on a retained worker, `updateRequest` for clarification
 of its active assignment, and `sendMessage` for information. Inspect the accepted
 update with `pollRequestUpdate`; admission, presentation, and checked incorporation
-remain separate evidence. `doc request` covers refusal and uncertain delivery.
+remain separate evidence. Use the hosted `doc` tool with topic `request` for
+refusal and uncertain delivery; `doc request` is a hosted query, not Haskell
+source for a notebook cell.
 Use `exomonad-cleanup` for `stopAgent`, `planCleanup`, and `executeCleanup`.
+
+A child reaches its own parent the same way, through `parentAgent`, not a
+retained handle — it has none. `sendMessage` returns
+`Either NotificationError NotificationReceipt`, a plain value to inspect, not
+one to `respond` with. It is progress only: the receipt is admission evidence,
+and the assignment stays open until the child calls `respond`.
+
+```haskell
+parentAgent >>= \case
+  Nothing -> pure ()
+  Just parent -> void (sendMessage parent "starting the migration; will check back before merging")
+```
 
 Assignment values and explicit worktree seeds keep ordinary Haskell value
 semantics and are not reevaluated at startup. A later failure in the cell stops
