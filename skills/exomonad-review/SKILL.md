@@ -25,7 +25,8 @@ Both return a retained reviewer plus progress; its settlement notice wakes you.
 your own pending delivery.
 
 Inside the reviewer, the assignment is `sessionInput :: ReviewTask`. Its candidate
-accessor is `reviewInput`, not `candidate`. Confirm `git rev-parse HEAD` is the
+accessor is `reviewInput`, not `candidate`. Read for structure before bugs: does the change add a second way to do
+something that exists? Confirm `git rev-parse HEAD` is the
 candidate commit before running checks; a test filter that matched zero tests is
 "not run", never "passed". After executing the relevant review, with
 `checks :: [Text]` naming the checks that actually ran (with matched counts) and
