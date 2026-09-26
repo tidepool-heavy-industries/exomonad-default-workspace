@@ -162,11 +162,15 @@ planSummary report =
           (planStarts (planOriginal report))
         then " (not all requested checks ran)" else "")
     <> ": " <> Text.intercalate "; "
-      [name <> ": " <> case result of
-        Left issue -> "start refused (" <> Text.pack (show issue) <> ")"
-        Right _ -> maybe "running or unavailable" (Text.pack . show) verdict
+      [case result of
+        Left issue -> name <> ": start refused (" <> Text.pack (show issue) <> ")"
+        Right _ -> case planState report of
+          Nothing -> name <> ": running or unavailable"
+          Just state -> case [entry | entry <- checkEntries state, checkName entry == name] of
+            entry : _ -> checkLine entry
+            [] -> name <> ": running or unavailable"
       | (name, result) <- planStarts (planOriginal report)
-      , let verdict = snd (planStatus report (name, result))]
+      ]
     <> case planWatcher (planOriginal report) of
       Just (Left issue) -> "; watcher refused (" <> Text.pack (show issue) <> ")"
       _ -> ""

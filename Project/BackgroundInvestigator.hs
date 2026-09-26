@@ -126,7 +126,7 @@ watchFailedCheck owner intent run selectProbesFor choose = R.start specification
         current <- R.get
         case (investigationResult current, investigationNotice current) of
           (Just focused, Nothing) -> do
-            receipt <- sendMessage owner (investigationSummary focused report)
+            receipt <- sendMessage owner (investigationSummary (investigationRun current) focused report)
             R.modify' (\state -> state { investigationNotice = Just receipt })
           _ -> pure ()
 
@@ -158,14 +158,11 @@ finishInvestigation actor = do
         forM_ (investigationFollowers state) R.finish
         Right <$> R.finish actor
 
-investigationSummary :: FocusedResult -> FollowupReport -> Text
-investigationSummary focused report = Text.take 2048 $
+investigationSummary :: FocusedRun -> FocusedResult -> FollowupReport -> Text
+investigationSummary original focused report =
   "focused investigation: "
     <> (if focusedPassed focused then "check passed" else "check not accepted")
-    <> "; original " <> Text.pack (show (Cmd.commandResult (focusedCommand focused)))
-    <> "; preparation " <> Text.pack (show (focusedPreparation focused))
-    <> "; execution " <> Text.pack (show (focusedExecution focused))
-    <> "; source " <> Text.pack (show (focusedSourceAssurance focused))
+    <> "; " <> focusedResultSummary original focused
     <> "; probes " <> Text.intercalate ", " (map probeLine (diagnosticObservations report))
     <> "; stop " <> Text.pack (show (followupStop report))
   where

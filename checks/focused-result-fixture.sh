@@ -2,7 +2,7 @@
 set -euo pipefail
 
 case "$1" in
-  pass|fail|unknown|dirty|missingfile|zero|setup|short|expired) ;;
+  pass|fail|preparedfail|unknown|dirty|missingfile|zero|setup|short|expired) ;;
   *) exit 2 ;;
 esac
 
@@ -13,6 +13,9 @@ fi
 if [[ "$1" == missingfile ]]; then
   echo "focused test evidence: /tmp/exomonad-missing-evidence-$$.json" >&2
   exit 0
+fi
+if [[ "$1" == preparedfail ]]; then
+  echo 'focused preparation exit: 0' >&2
 fi
 
 if [[ "${2:-}" == managed ]]; then
