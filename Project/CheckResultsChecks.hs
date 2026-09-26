@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeOperators #-}
 
 module Project.CheckResultsChecks
-  ( preparedCompletion, completionRouting, managedEvidence, runningCommandCleanup
+  ( preparedCompletion, completionRouting, retainedRecovery, managedEvidence, runningCommandCleanup
   , EvidenceProbe (probeStart, probePrepared, probeRead, probeMove), evidenceProbe
   ) where
 
@@ -174,6 +174,15 @@ completionRouting = do
   check "zero selection, incomplete setup, and short execution stay distinct"
     ("(ZeroSelection,SetupIncomplete,ExecutionUnknown,SetupIncomplete)"
       `Text.isInfixOf` Text.filter (/= ' ') (lastOutput setup))
+
+retainedRecovery :: Member RecipeCheck effects => Eff effects ()
+retainedRecovery = do
+  owner <- root
+  let fixture = Text.pack workspaceRoot <> "/checks/focused-result-fixture.sh"
+  void $ turn owner $ Text.unlines
+    [ "let spec = FocusedSpec \"fixture check\" \"fixture-source\" \"fixture-package\" \"lib\" \"fixture::one\" 1"
+    , "let fixture kind = Cmd.withMemory (Cmd.MiB 256) (Cmd.argv [\"bash\", " <> Text.pack (show fixture) <> ", kind])"
+    ]
   expired <- turn owner
     "expiredJob <- Cmd.start (fixture \"expired\")\nexpiredResult <- Cmd.quiet (collectFocused (FocusedRun spec expiredJob))\n(focusedExecution expiredResult, focusedPassed expiredResult, focusedEvidence expiredResult)"
   check ("a retained job with an incomplete output page cannot prove a pass: " <> Text.take 240 (lastOutput expired))
