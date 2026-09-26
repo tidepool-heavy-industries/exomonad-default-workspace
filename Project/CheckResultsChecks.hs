@@ -54,7 +54,7 @@ completionRouting = do
     "failed <- Cmd.start (fixture \"fail\")\nunknown <- Cmd.start (fixture \"unknown\")\nRight watcher <- watchChecks me NotifyProblems [(\"late\", FocusedRun spec late), (\"failed\", FocusedRun spec failed), (\"unknown\", FocusedRun spec unknown)]"
   observed <- awaitOutput owner
     "view <- readChecks watcher\nmap (\\entry -> fmap (checkVerdict entry) (checkOutcome entry)) (checkEntries view)"
-    (\text -> "Just CheckUnknown" `Text.isInfixOf` text && not ("Nothing" `Text.isInfixOf` text))
+    (\text -> Text.count "Just " text == 3)
   check ("late completion, failed exit and missing evidence all settle: " <> observed)
     (all (`Text.isInfixOf` observed) ["Just CheckPassed", "Just CheckFailed", "Just CheckUnknown"])
   details <- turn owner
