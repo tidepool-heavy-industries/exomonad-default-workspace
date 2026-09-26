@@ -8,7 +8,10 @@
 -- | Exact source, artifact and test-count evidence for a focused Cargo check.
 module Project.TestEvidence
   ( FocusedSpec (..), FocusedSetupIssue (..), FocusedRun (..), FocusedRecord (..), FailureKind (..)
-  , FocusedResult (..), startFocused, collectFocused, finishFocused, focusedPassed
+  , FocusedResult (..), CheckExecution (..), SourceAssurance (..)
+  , FailureEvidence (..), FocusedDiagnosis (..)
+  , startFocused, startFocusedIn, collectFocused, diagnoseFocused, finishFocused
+  , focusedPassed, focusedExecution, focusedSourceAssurance
   ) where
 
 import Control.Monad.Freer (Eff, Member)
@@ -17,6 +20,7 @@ import qualified Data.Text as Text
 import qualified Jev.Operators as J
 import Jev.Operators (Packet ((:=), (:&)))
 import qualified Tidepool.Command as Cmd
+import qualified Project.Reflex as Reflex
 import Tidepool.Aeson (FromJSON (..), (.:), (.:?), withObject)
 import Tidepool.Effects.Core (Commands, Jev)
 import Tidepool.QQ.Bash (bash)
@@ -32,7 +36,11 @@ data FocusedSpec = FocusedSpec
 
 data FocusedRun = FocusedRun FocusedSpec Cmd.Job deriving (Show)
 
-data FocusedSetupIssue = NonPositiveExpected Int deriving (Show, Eq)
+data FocusedSetupIssue
+  = NonPositiveExpected Int
+  | NonAbsoluteCheckout Text
+  | FocusedStartRefused Cmd.CommandError
+  deriving (Show, Eq)
 
 -- The runner writes these fields to evidence.json before test execution and
 -- fills counts as they become known. Missing fields stay missing evidence.
@@ -66,10 +74,35 @@ data FailureKind
   deriving (Show, Eq)
 
 data FocusedResult = FocusedResult
-  { focusedCommand :: Cmd.RunResult
+  { focusedSpec :: FocusedSpec
+  , focusedCommand :: Cmd.RunResult
   , focusedEvidencePath :: Maybe Text
   , focusedEvidence :: Either Text FocusedRecord
   , focusedFailure :: Maybe (Either Text FailureKind)
+  } deriving (Show)
+
+data CheckExecution = ExecutionPassed Int | ExecutionFailed Int Int | ExecutionUnknown
+  deriving (Eq, Show)
+
+data SourceAssurance = SourceVerified | SourceModified Text | SourceDifferent (Maybe Text) | SourceUnrecorded
+  deriving (Eq, Show)
+
+-- Observable failure shape. The causal judgment in FailureKind is separate.
+data FailureEvidence
+  = NoFailureEvidence
+  | EvidenceUnavailable
+  | ZeroSelection
+  | SetupIncomplete
+  | AssertionsFailed Int Int
+  | RunnerFailed
+  | SourceUnverified
+  deriving (Show, Eq)
+
+data FocusedDiagnosis = FocusedDiagnosis
+  { diagnosisResult :: FocusedResult
+  , diagnosisBranch :: FailureEvidence
+  , diagnosisExcerpt :: Either Text Text
+  , diagnosisReflex :: Maybe Reflex.Reflex
   } deriving (Show)
 
 -- Run in the actor's checkout. The caller chooses a realistic memory limit for
@@ -77,18 +110,51 @@ data FocusedResult = FocusedResult
 startFocused :: Member Commands effects => Cmd.Memory -> FocusedSpec -> Eff effects (Either FocusedSetupIssue FocusedRun)
 startFocused memory spec
   | focusedExpected spec <= 0 = pure (Left (NonPositiveExpected (focusedExpected spec)))
-  | otherwise = do
-    job <- Cmd.background $ Cmd.withMemory memory $
+  | otherwise = fmap (either (Left . FocusedStartRefused) (Right . FocusedRun spec)) $
+      Cmd.tryBackground (focusedCommandFor memory spec)
+
+-- | Bind a focused run to an absolute checkout when a completion actor may
+-- live outside the caller's working directory.
+startFocusedIn :: Member Commands effects => Text -> Cmd.Memory -> FocusedSpec -> Eff effects (Either FocusedSetupIssue FocusedRun)
+startFocusedIn checkout memory spec
+  | focusedExpected spec <= 0 = pure (Left (NonPositiveExpected (focusedExpected spec)))
+  | not ("/" `Text.isPrefixOf` checkout) = pure (Left (NonAbsoluteCheckout checkout))
+  | otherwise = fmap (either (Left . FocusedStartRefused) (Right . FocusedRun spec)) $
+      Cmd.tryBackground (Cmd.inDirectory checkout (focusedCommandFor memory spec))
+
+focusedCommandFor :: Cmd.Memory -> FocusedSpec -> Cmd.Command
+focusedCommandFor memory spec = Cmd.withMemory memory $
       Cmd.withArguments
         [ focusedPackage spec, focusedTarget spec, focusedFilter spec
         , Text.pack (show (focusedExpected spec)) ]
         [bash|set -euo pipefail
 scripts/cargo-focused-test --package "$1" --target "$2" --filter "$3" --expect "$4"|]
-    pure (Right (FocusedRun spec job))
+
+focusedExecution :: FocusedResult -> CheckExecution
+focusedExecution result
+  | focusedExpected spec <= 0 = ExecutionUnknown
+  | otherwise = case focusedEvidence result of
+      Left _ -> ExecutionUnknown
+      Right record -> case (recordRunnable record, recordSummaries record) of
+        (Just runnable, Just [[passed, failed, _, _, _]])
+          | length runnable == focusedExpected spec && failed > 0 -> ExecutionFailed passed failed
+          | length runnable == focusedExpected spec && passed == focusedExpected spec && failed == 0 -> ExecutionPassed passed
+        _ -> ExecutionUnknown
+  where spec = focusedSpec result
+
+focusedSourceAssurance :: FocusedResult -> SourceAssurance
+focusedSourceAssurance result = case focusedEvidence result of
+  Left _ -> SourceUnrecorded
+  Right record
+    | recordSource record /= Just (focusedSource spec) -> SourceDifferent (recordSource record)
+    | recordWorkingTree record == Just "" -> SourceVerified
+    | Just dirty <- recordWorkingTree record -> SourceModified dirty
+    | otherwise -> SourceUnrecorded
+  where spec = focusedSpec result
 
 -- Read retained evidence after completion, without a model judgment.
 collectFocused :: Member Commands effects => FocusedRun -> Eff effects FocusedResult
-collectFocused (FocusedRun _ job) = do
+collectFocused (FocusedRun spec job) = do
   completed <- Cmd.await job
   let path = evidencePath (Cmd.stderr completed)
   evidence <- case path of
@@ -102,21 +168,60 @@ collectFocused (FocusedRun _ job) = do
         else case Cmd.decodeWith (Cmd.asJSON @FocusedRecord) (Cmd.stdout loaded) of
           Left issue -> Left ("cannot decode focused evidence: " <> Text.pack (show issue))
           Right record -> Right record
-  pure (FocusedResult completed path evidence Nothing)
+  pure (FocusedResult spec completed path evidence Nothing)
+
+failureEvidence :: FocusedResult -> FailureEvidence
+failureEvidence result = case focusedEvidence result of
+  Left _ -> EvidenceUnavailable
+  Right record
+    | recordRunnable record == Just [] -> ZeroSelection
+    | ExecutionFailed passed failed <- focusedExecution result ->
+        AssertionsFailed passed failed
+    | ExecutionUnknown <- focusedExecution result -> SetupIncomplete
+    | Cmd.failure (focusedCommand result) /= Nothing
+        || Cmd.commandCleanup (Cmd.commandResult (focusedCommand result)) /= Cmd.CommandClean
+        || recordExitCode record /= Just 0 -> RunnerFailed
+    | focusedSourceAssurance result /= SourceVerified -> SourceUnverified
+    | otherwise -> NoFailureEvidence
+
+-- | Read at most 8192 bytes from the retained log, then apply the existing
+-- code-only reflex table. The original receipt and JSON remain in the packet.
+diagnoseFocused :: Member Commands effects => FocusedResult -> Eff effects FocusedDiagnosis
+diagnoseFocused result = do
+  let branch = failureEvidence result
+  excerpt <- case (branch, focusedEvidence result) of
+    (NoFailureEvidence, _) -> pure (Right "")
+    (_, Left issue) -> pure (Left issue)
+    (_, Right record) -> do
+      readLog <- Cmd.run (Cmd.argv ["tail", "-c", "8192", recordOutput record])
+      pure $ if Cmd.failure readLog /= Nothing
+          || Cmd.commandCleanup (Cmd.commandResult readLog) /= Cmd.CommandClean
+        then Left ("cannot read retained output log; command receipt: " <>
+          Text.pack (show (Cmd.commandResult readLog)))
+        else either (Left . Text.pack . show) Right (Cmd.stdout readLog)
+  let reflex = case (branch, focusedEvidence result, excerpt) of
+        (NoFailureEvidence, _, _) -> Nothing
+        (_, Right record, Right output) ->
+          case recordExitCode record of
+            Just code | code /= 0 -> Reflex.reflexFor code output
+            _ -> Nothing
+        _ -> Nothing
+  pure (FocusedDiagnosis result branch excerpt reflex)
 
 -- An optional diagnosis of a failed check never changes its pass rule.
 finishFocused
   :: (Member Commands effects, Member Jev effects)
   => FocusedRun -> Eff effects FocusedResult
-finishFocused run@(FocusedRun spec _) = do
+finishFocused run = do
   result <- collectFocused run
+  diagnosis <- diagnoseFocused result
+  let spec = focusedSpec result
   judgment <- case (Cmd.failure (focusedCommand result), focusedEvidence result) of
     (Nothing, _) -> pure Nothing
     (_, Left _) -> pure Nothing
-    (Just _, Right record) -> do
-      excerpt <- Cmd.run (Cmd.argv ["tail", "-n", "80", recordOutput record])
+    (Just _, Right _) -> do
       let diagnostic = Text.takeEnd 8000 $ Cmd.stderr (focusedCommand result) <> "\n" <>
-            either (const "output log unavailable") id (Cmd.stdout excerpt)
+            either (const "output log unavailable") id (diagnosisExcerpt diagnosis)
       answer <- J.ask1
         (J.state (#intent := focusedIntent spec :& #diagnostic := diagnostic))
         (J.choice "Which explanation best fits this failed focused check?"
@@ -133,20 +238,15 @@ finishFocused run@(FocusedRun spec _) = do
 
 -- Exit, checkout identity, selected count and executed count are code facts.
 -- A Jev classification is never an input to this predicate.
-focusedPassed :: FocusedSpec -> FocusedResult -> Bool
-focusedPassed spec result = case focusedEvidence result of
-  Left _ -> False
-  Right record ->
-    focusedExpected spec > 0
-      && Cmd.failure (focusedCommand result) == Nothing
-      && Cmd.commandCleanup (Cmd.commandResult (focusedCommand result)) == Cmd.CommandClean
-      && recordSource record == Just (focusedSource spec)
-      && recordWorkingTree record == Just ""
-      && recordExitCode record == Just 0
-      && maybe False ((== focusedExpected spec) . length) (recordRunnable record)
-      && case recordSummaries record of
-        Just [[passed, failed, _, _, _]] -> passed == focusedExpected spec && failed == 0
-        _ -> False
+focusedPassed :: FocusedResult -> Bool
+focusedPassed result =
+  focusedExecution result == ExecutionPassed (focusedExpected (focusedSpec result))
+    && focusedSourceAssurance result == SourceVerified
+    && Cmd.failure (focusedCommand result) == Nothing
+    && Cmd.commandCleanup (Cmd.commandResult (focusedCommand result)) == Cmd.CommandClean
+    && case focusedEvidence result of
+      Right record -> recordExitCode record == Just 0
+      Left _ -> False
 
 evidencePath :: Text -> Maybe Text
 evidencePath stderr = case

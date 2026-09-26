@@ -2,7 +2,7 @@
 set -euo pipefail
 
 case "$1" in
-  pass|fail|unknown|dirty|missingfile) ;;
+  pass|fail|unknown|dirty|missingfile|zero|setup) ;;
   *) exit 2 ;;
 esac
 
@@ -16,7 +16,7 @@ if [[ "$1" == missingfile ]]; then
 fi
 
 evidence_dir=$(mktemp -d)
-if [[ "$1" == pass || "$1" == dirty ]]; then
+if [[ "$1" == pass || "$1" == dirty || "$1" == zero ]]; then
   exit_code=0
   passed=1
   failed=0
@@ -29,9 +29,20 @@ working_tree_status=''
 if [[ "$1" == dirty ]]; then
   working_tree_status=' M README.md'
 fi
+runnable='["fixture::one"]'
+if [[ "$1" == zero ]]; then
+  runnable='[]'
+  passed=0
+fi
+if [[ "$1" == setup ]]; then
+  runnable='null'
+  passed=0
+  failed=0
+  exit_code=2
+fi
 printf '%s\n' 'fixture diagnostic' > "$evidence_dir/output.log"
 cat > "$evidence_dir/evidence.json" <<EOF
-{"source":"fixture-source","working_tree_status":"$working_tree_status","executable":"fixture-executable","sha256":"fixture-digest","output":"$evidence_dir/output.log","runnable":["fixture::one"],"summaries":[[$passed,$failed,0,0,0]],"exit_code":$exit_code}
+{"source":"fixture-source","working_tree_status":"$working_tree_status","executable":"fixture-executable","sha256":"fixture-digest","output":"$evidence_dir/output.log","runnable":$runnable,"summaries":[[$passed,$failed,0,0,0]],"exit_code":$exit_code}
 EOF
 echo "focused test evidence: $evidence_dir/evidence.json" >&2
 exit "$exit_code"

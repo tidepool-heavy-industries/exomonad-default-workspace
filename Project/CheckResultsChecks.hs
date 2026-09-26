@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Project.CheckResultsChecks (completionRouting) where
+module Project.CheckResultsChecks (completionRouting, runningCommandCleanup) where
 
 import Control.Monad (void)
 import Control.Monad.Freer (Eff, Member)
@@ -24,6 +24,9 @@ completionRouting = do
   invalidCount <- turn owner
     "bad <- startFocused (Cmd.MiB 256) (spec { focusedExpected = 0 })\ncase bad of { Left (NonPositiveExpected 0) -> True; _ -> False }"
   check "zero expected tests are rejected before command submission" (lastOutput invalidCount == "True")
+  invalidCheckout <- turn owner
+    "bad <- startFocusedIn \"relative\" (Cmd.MiB 256) spec\ncase bad of { Left (NonAbsoluteCheckout \"relative\") -> True; _ -> False }"
+  check "focused run refuses a relative checkout before submission" (lastOutput invalidCheckout == "True")
   invalid <- turn owner "invalid <- watchChecks me NotifySummary []\ncase invalid of { Left NoFocusedChecks -> True; _ -> False }"
   check "empty watcher has a typed refusal" (lastOutput invalid == "True")
   duplicate <- turn owner
@@ -45,6 +48,10 @@ completionRouting = do
     "view <- readChecks watcher\nlet [passEntry, failEntry, _] = checkEntries view\nlet Just passOutcome = checkOutcome passEntry\nlet Just failOutcome = checkOutcome failEntry\nlet invalid = passOutcome { checkCompletion = checkCompletion failOutcome }\n(checkExecution passEntry invalid, checkSourceAssurance passEntry invalid)"
   check "mismatched terminal receipt cannot verify execution or source"
     (all (`Text.isInfixOf` lastOutput mismatch) ["ExecutionUnknown", "SourceUnrecorded"])
+  productFailure <- turn owner
+    "view <- readChecks watcher\nlet [_, failedEntry, _] = checkEntries view\nlet Just failedOutcome = checkOutcome failedEntry\ndiagnosis <- diagnoseFocused (checkFocused failedOutcome)\n(diagnosisBranch diagnosis, diagnosisExcerpt diagnosis)"
+  check "assertion failure diagnosis retains a bounded output excerpt"
+    (all (`Text.isInfixOf` lastOutput productFailure) ["AssertionsFailed 0 1", "fixture diagnostic"])
   notices <- turn owner "length . checkNotices <$> readChecks watcher"
   check "problem policy sends only failed and unknown notices" (output notices == "2")
   void $ turn owner "finishChecks watcher"
@@ -75,3 +82,20 @@ completionRouting = do
   check "failed evidence read remains unknown with its command receipt"
     (all (`Text.isInfixOf` missing) ["CheckUnknown", "cat receipt"])
   void $ turn owner "finishChecks missingWatcher"
+
+  setup <- turn owner
+    "zeroJob <- Cmd.start (fixture \"zero\")\nzeroResult <- collectFocused (FocusedRun spec zeroJob)\nzeroDiagnosis <- diagnoseFocused zeroResult\nsetupJob <- Cmd.start (fixture \"setup\")\nsetupResult <- collectFocused (FocusedRun spec setupJob)\nsetupDiagnosis <- diagnoseFocused setupResult\n(diagnosisBranch zeroDiagnosis, diagnosisBranch setupDiagnosis)"
+  check "zero selection and incomplete setup take distinct deterministic branches"
+    (all (`Text.isInfixOf` lastOutput setup) ["ZeroSelection", "SetupIncomplete"])
+
+-- The driver must service a live command's cleanup receipt while its resident
+-- forest stops. A successful restart proves the old producer was sealed.
+runningCommandCleanup :: Member RecipeCheck effects => Eff effects ()
+runningCommandCleanup = do
+  owner <- root
+  void $ turn owner
+    "live <- Cmd.start (Cmd.withMemory (Cmd.MiB 64) (Cmd.argv [\"sleep\", \"30\"]))"
+  running <- awaitOutput owner "Cmd.status live" (Text.isInfixOf "CommandRunning")
+  check "command is running before resident shutdown" ("CommandRunning" `Text.isInfixOf` running)
+  identity <- restart
+  check "live command retirement sealed its producer" (not (Text.null identity))

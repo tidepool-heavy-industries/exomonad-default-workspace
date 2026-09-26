@@ -33,12 +33,6 @@ data CheckSetupIssue = NoFocusedChecks | DuplicateCheckName Text deriving (Eq, S
 
 data CheckVerdict = CheckPassed | CheckFailed | CheckUnknown deriving (Eq, Show)
 
-data CheckExecution = ExecutionPassed Int | ExecutionFailed Int Int | ExecutionUnknown
-  deriving (Eq, Show)
-
-data SourceAssurance = SourceVerified | SourceModified Text | SourceDifferent (Maybe Text) | SourceUnrecorded
-  deriving (Eq, Show)
-
 data CheckOutcome = CheckOutcome
   { checkCompletion :: Cmd.CommandResult
   , checkFocused :: FocusedResult
@@ -127,42 +121,29 @@ checkDefinition owner policy runs =
 
 checkVerdict :: CheckEntry -> CheckOutcome -> CheckVerdict
 checkVerdict entry outcome
-  | not (matchingReceipt outcome) = CheckUnknown
-  | focusedPassed spec result = CheckPassed
+  | not (matchingReceipt entry outcome) = CheckUnknown
+  | focusedPassed result = CheckPassed
   | ExecutionFailed _ _ <- checkExecution entry outcome = CheckFailed
   | Cmd.failure (focusedCommand result) /= Nothing = CheckFailed
   | otherwise = CheckUnknown
   where
-    FocusedRun spec _ = checkRun entry
     result = checkFocused outcome
 
 checkExecution :: CheckEntry -> CheckOutcome -> CheckExecution
 checkExecution entry outcome
-  | not (matchingReceipt outcome) = ExecutionUnknown
-  | focusedExpected spec <= 0 = ExecutionUnknown
-  | otherwise = case focusedEvidence (checkFocused outcome) of
-      Left _ -> ExecutionUnknown
-      Right record -> case (recordRunnable record, recordSummaries record) of
-        (Just runnable, Just [[passed, failed, _, _, _]])
-          | length runnable == focusedExpected spec && failed > 0 -> ExecutionFailed passed failed
-          | length runnable == focusedExpected spec && passed == focusedExpected spec && failed == 0 -> ExecutionPassed passed
-        _ -> ExecutionUnknown
-  where FocusedRun spec _ = checkRun entry
+  | not (matchingReceipt entry outcome) = ExecutionUnknown
+  | otherwise = focusedExecution (checkFocused outcome)
 
 checkSourceAssurance :: CheckEntry -> CheckOutcome -> SourceAssurance
-checkSourceAssurance _ outcome | not (matchingReceipt outcome) = SourceUnrecorded
-checkSourceAssurance entry outcome = case focusedEvidence (checkFocused outcome) of
-  Left _ -> SourceUnrecorded
-  Right record
-    | recordSource record /= Just (focusedSource spec) -> SourceDifferent (recordSource record)
-    | recordWorkingTree record == Just "" -> SourceVerified
-    | Just dirty <- recordWorkingTree record -> SourceModified dirty
-    | otherwise -> SourceUnrecorded
-  where FocusedRun spec _ = checkRun entry
+checkSourceAssurance entry outcome | not (matchingReceipt entry outcome) = SourceUnrecorded
+checkSourceAssurance _ outcome = focusedSourceAssurance (checkFocused outcome)
 
-matchingReceipt :: CheckOutcome -> Bool
-matchingReceipt outcome =
-  Cmd.commandResult (focusedCommand (checkFocused outcome)) == checkCompletion outcome
+matchingReceipt :: CheckEntry -> CheckOutcome -> Bool
+matchingReceipt entry outcome =
+  let FocusedRun spec _ = checkRun entry
+      result = checkFocused outcome
+  in focusedSpec result == spec
+    && Cmd.commandResult (focusedCommand result) == checkCompletion outcome
 
 checkLine :: CheckEntry -> Text
 checkLine entry = checkName entry <> ": " <> case checkOutcome entry of
