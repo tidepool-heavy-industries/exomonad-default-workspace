@@ -8,7 +8,7 @@ import Control.Monad (void)
 import Control.Monad.Freer (Eff, Member)
 import qualified Data.Text as Text
 import Tidepool.Check
-import Project.Checks (script)
+import Project.Checks (script, checkSource)
 
 oneComponent :: Member RecipeCheck effects => Eff effects ()
 oneComponent = do
