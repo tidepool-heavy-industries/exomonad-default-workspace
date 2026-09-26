@@ -22,11 +22,11 @@ pendingChildExample
   -> Eff effects (Either ProbeRefusal ProbeLaunch)
 pendingChildExample owner baseline incorporation checkout = do
   void (watchIncorporatedBaseline owner baseline "pending child" incorporation)
+  let probe name context args =
+        CommandProbe name context checkout (Cmd.MiB 128) (Cmd.argv args)
   result <- startProbeBatch (ProbeLimits 2 2)
-    [ CommandProbe "status" "working tree status" checkout (Cmd.MiB 128)
-        (Cmd.argv ["git", "status", "--short"])
-    , CommandProbe "head" "current commit" checkout (Cmd.MiB 128)
-        (Cmd.argv ["git", "rev-parse", "HEAD"])
+    [ probe "status" "working tree status" ["git", "status", "--short"]
+    , probe "head" "current commit" ["git", "rev-parse", "HEAD"]
     ]
   pure result
 
@@ -43,10 +43,7 @@ chosenProbeExample
   -> Eff effects (Either ProbeChoiceFailure (Maybe (Either ProbeRefusal ProbeLaunch)))
 chosenProbeExample question probes = do
   chosen <- chooseNextProbe question probes
-  case chosen of
-    Left issue -> pure (Left issue)
-    Right Nothing -> pure (Right Nothing)
-    Right (Just probe) -> Right . Just <$> startProbeBatch (ProbeLimits 1 1) [probe]
+  traverse (traverse (startProbeBatch (ProbeLimits 1 1) . pure)) chosen
 
 assert :: String -> Bool -> IO ()
 assert label passed = unless passed (error label)
@@ -70,8 +67,14 @@ main = do
       _ -> False)
   assert "cap active and total selected probes separately"
     (case planProbeBatch (ProbeLimits 2 1) available of
-      Right plan -> names plan == ["one"] && plannedUnrun plan == ["two"]
-        && plannedOutsideBudget plan == ["three"]
+      Right plan -> names plan == ["one"] && map probeName (plannedUnrun plan) == ["two"]
+        && map probeName (plannedOutsideBudget plan) == ["three"]
+      _ -> False)
+  assert "deferred probes retain their typed command for the next batch"
+    (case planProbeBatch (ProbeLimits 2 1) available of
+      Right firstPlan -> case planProbeBatch (ProbeLimits 1 1) (plannedUnrun firstPlan) of
+        Right nextPlan -> names nextPlan == ["two"]
+        _ -> False
       _ -> False)
   assert "refuse implicit working directory"
     (case planProbeBatch (ProbeLimits 1 1) [(probe "one") { probeDirectory = "relative" }] of

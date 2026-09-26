@@ -65,9 +65,15 @@ data ProbeStart
 
 data ProbeLaunch = ProbeLaunch
   { startedProbes :: [ProbeStart]
-  , unrunProbes :: [Text]
-  , outsideSelectionBudget :: [Text]
-  } deriving (Show)
+  , unrunProbes :: [CommandProbe]
+  , outsideSelectionBudget :: [CommandProbe]
+  }
+
+instance Show ProbeLaunch where
+  show launch = "ProbeLaunch { startedProbes = " ++ show (startedProbes launch)
+    ++ ", unrunProbes = " ++ show (map probeName (unrunProbes launch))
+    ++ ", outsideSelectionBudget = " ++ show (map probeName (outsideSelectionBudget launch))
+    ++ " }"
 
 data ProbeObservation
   = ProbeStartFailed Text Cmd.CommandError
@@ -78,9 +84,15 @@ data ProbeObservation
 
 data ProbePlan = ProbePlan
   { plannedStart :: [CommandProbe]
-  , plannedUnrun :: [Text]
-  , plannedOutsideBudget :: [Text]
+  , plannedUnrun :: [CommandProbe]
+  , plannedOutsideBudget :: [CommandProbe]
   }
+
+instance Show ProbePlan where
+  show plan = "ProbePlan { plannedStart = " ++ show (map probeName (plannedStart plan))
+    ++ ", plannedUnrun = " ++ show (map probeName (plannedUnrun plan))
+    ++ ", plannedOutsideBudget = " ++ show (map probeName (plannedOutsideBudget plan))
+    ++ " }"
 
 data ProbeChoiceFailure
   = ProbeChoiceUnavailable Text
@@ -120,8 +132,8 @@ planProbeBatch limits selected
       Nothing ->
         let admitted = take (maximumSelected limits) selected
             active = take (maximumConcurrent limits) admitted
-            unrun = map probeName (drop (length active) admitted)
-            outside = map probeName (drop (length admitted) selected)
+            unrun = drop (length active) admitted
+            outside = drop (length admitted) selected
         in case firstInvalid admitted of
           Just refusal -> Left refusal
           Nothing -> Right (ProbePlan active unrun outside)

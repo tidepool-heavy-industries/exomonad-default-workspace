@@ -22,11 +22,12 @@ import Control.Monad.Freer (Eff, Member)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import GHC.Generics (Generic)
+import qualified Tidepool.Actor as Actor
 import qualified Tidepool.Actor.Record as R
 import Tidepool.Actors.Exomonad
-import Tidepool.Effects.Core (Actor)
+import Tidepool.Effects.Core (Actor, Jev)
+import Tidepool.Effects.Row (knownEffects)
 import Tidepool.Worktree (renderGitOid)
-import Project.Actors (CoordinationEffects, coordinationActor)
 import Project.Types (Incorporation (..))
 
 data AssumptionChange fingerprint = AssumptionChange
@@ -51,7 +52,10 @@ data AssumptionWatch fingerprint observation mode = AssumptionWatch
   } deriving Generic
 
 type AssumptionEffects fingerprint observation =
-  CoordinationEffects (AssumptionWatch fingerprint observation)
+  R.LocalEffects (AssumptionWatch fingerprint observation) '[Replies, Actor, Notifications, Jev]
+
+type AssumptionHandler fingerprint observation =
+  R.Handler (AssumptionState fingerprint) (AssumptionEffects fingerprint observation)
 
 data BaselineStatus
   = BaselineAt GitOid
@@ -68,10 +72,11 @@ assumptionDefinition
   -> (fingerprint, Text)
   -> R.EventSource observation
   -> (observation -> Maybe (fingerprint, Text))
-  -> ((fingerprint, Text) -> (fingerprint, Text) -> Maybe Text)
+  -> ((fingerprint, Text) -> (fingerprint, Text)
+      -> AssumptionHandler fingerprint observation (Maybe Text))
   -> ActorSpec (AssumptionWatch fingerprint observation) (AssumptionEffects fingerprint observation)
 assumptionDefinition owner initial source project relevant =
-  coordinationActor "assumption-watch" AssumptionWatch
+  R.definition "assumption-watch" (Actor.Selected knownEffects) AssumptionWatch
     { assumptionState = AssumptionState initial Nothing 0
     , assumptionView = \() -> R.get
     , assumptionEvents = R.on source $ \observation -> case project observation of
@@ -80,20 +85,22 @@ assumptionDefinition owner initial source project relevant =
           prior <- R.gets assumptionCurrent
           if fst prior == fst current
             then R.modify' (\state -> state { assumptionCurrent = current })
-            else case relevant prior current of
-              Nothing -> R.modify' (\state -> state { assumptionCurrent = current })
-              Just reason -> do
-                receipt <- sendMessage owner (Text.unlines
-                  [ "Assumption changed: " <> reason
-                  , "Before: " <> snd prior
-                  , "After: " <> snd current
-                  ])
-                R.modify' $ \state -> state
-                  { assumptionCurrent = current
-                  , assumptionLastChange = Just (AssumptionChange
-                      (fst prior) (fst current) (snd prior) (snd current) reason receipt)
-                  , assumptionChangeCount = assumptionChangeCount state + 1
-                  }
+            else do
+              decision <- relevant prior current
+              case decision of
+                Nothing -> R.modify' (\state -> state { assumptionCurrent = current })
+                Just reason -> do
+                  receipt <- sendMessage owner (Text.unlines
+                    [ "Assumption changed: " <> reason
+                    , "Before: " <> snd prior
+                    , "After: " <> snd current
+                    ])
+                  R.modify' $ \state -> state
+                    { assumptionCurrent = current
+                    , assumptionLastChange = Just (AssumptionChange
+                        (fst prior) (fst current) (snd prior) (snd current) reason receipt)
+                    , assumptionChangeCount = assumptionChangeCount state + 1
+                    }
     }
 
 watchAssumption
@@ -102,7 +109,8 @@ watchAssumption
   -> (fingerprint, Text)
   -> R.EventSource observation
   -> (observation -> Maybe (fingerprint, Text))
-  -> ((fingerprint, Text) -> (fingerprint, Text) -> Maybe Text)
+  -> ((fingerprint, Text) -> (fingerprint, Text)
+      -> AssumptionHandler fingerprint observation (Maybe Text))
   -> Eff effects (ActorHandle (AssumptionWatch fingerprint observation))
 watchAssumption owner initial source project relevant =
   R.start (assumptionDefinition owner initial source project relevant)
@@ -128,6 +136,6 @@ watchIncorporatedBaseline owner baseline pendingChild incorporation =
     project (Left failure) =
       Just (BaselineUnavailable (Text.pack (show failure)), pendingChild
         <> " incorporation failed: " <> Text.pack (show failure))
-    relevant _ current = Just $ case fst current of
+    relevant _ current = pure $ Just $ case fst current of
       BaselineAt _ -> "incorporated source changed while a child is pending"
       BaselineUnavailable _ -> "pending child incorporation became unavailable"
