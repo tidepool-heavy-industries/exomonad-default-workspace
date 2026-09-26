@@ -376,7 +376,8 @@ reviewFlowWith owner task policy implementer choose =
       R.modify' (\state -> state { flowStage = stage })
       let notice = case stage of
             ReviewStopped (ReviewEscalated reason) ->
-              Just ("review escalated to owner: " <> reason)
+              Just ("review escalated to owner: " <> reason
+                <> "; inspect flowReviewRoutes and decide repair or scope")
             _ -> flowNotice policy stage
       case notice of
         Nothing -> pure ()
