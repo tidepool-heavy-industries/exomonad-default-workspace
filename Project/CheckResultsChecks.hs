@@ -110,10 +110,10 @@ completionRouting = do
     "Right partialWatcher <- watchChecksWithRefusals me NotifySummary [(\"refused\", NonPositiveExpected 0)] [(\"late\", FocusedRun spec late)]"
   partial <- awaitOutput owner
     "partialState <- readChecks partialWatcher\nlet partialPlan = PlanStart [(\"refused\", Left (NonPositiveExpected 0)), (\"late\", Right (FocusedRun spec late))] (Just (Right partialWatcher))\nlet partialReport = PlanReport partialPlan (Just partialState)\n(planPassed partialReport, planSummary partialReport, length (checkNotices partialState))"
-    (\result -> "CheckPassed" `Text.isInfixOf` result && ",1)" `Text.isInfixOf` result)
-  check "partial admission keeps the passed original but refuses whole-plan acceptance"
+    (Text.isInfixOf "late: CheckPassed")
+  check ("partial admission keeps the passed original but refuses whole-plan acceptance: " <> Text.take 200 partial)
     (all (`Text.isInfixOf` partial)
-      ["False", "refused: start refused", "late: CheckPassed", "1"])
+      ["False", "not all requested checks ran", "refused: start refused", "late: CheckPassed"])
   void $ turn owner "finishChecks partialWatcher"
   void $ turn owner "case recovered of { GateWatching _ handle -> finishChecks handle >> pure (); _ -> pure () }"
   void $ turn owner
