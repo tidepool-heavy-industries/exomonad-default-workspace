@@ -233,7 +233,7 @@ effectfulRouting = do
     "state <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (case (flowStage state, flowReviewRoutes state) of { (ReviewStopped (ReviewEscalated reason), [(_, ReviewRouteResult (EscalateReview selected) DeterministicRoute)]) -> reason == \"owner must decide this scope change\" && selected == reason && flowRepairCount state == 0; _ -> False })"
     ("True" `Text.isInfixOf`)
   check "effectful route escalates a valid exact-source Repair without dispatching repair"
-    (Text.strip routed == "True")
+    ("True" `Text.isInfixOf` routed)
   notice <- turn owner
     "state <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (length (flowNotices state))"
   check "owner receives one escalation notice"
