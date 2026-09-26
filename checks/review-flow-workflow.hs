@@ -1,7 +1,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 import Tidepool.Effects.Core (GitRef (..))
--- Bind chooseReviewRoute = semanticReviewChoice for a live semantic decision,
--- or supply a bounded policy callback. Only exact-source Repair reaches it.
+-- Supply routeCriteria for this task. Exact-source Repair uses Jev only when
+-- criteria are present; Accepted and missing-criteria escalation are local.
 let campaign = campaignName :: CampaignLabel
 let task = Task (batch campaign "component") "plans/component.md" sourceHead
       "Implement one component" "Review its exact committed candidate"
@@ -13,9 +13,9 @@ Right coordinatorTree <- createWorktree
   (fromRef (GitRef (renderGitOid sourceHead)) coordinatorName)
 let policy = defaultReviewFlowPolicy
       { flowRepairLimit = 1
-      , flowEscalationCriteria = ["A finding changes the assigned paths or acceptance."] }
+      , flowEscalationCriteria = routeCriteria }
 flow <- R.start (R.withWorktree (worktreeId coordinatorTree)
-  (reviewFlowWith me task policy worker chooseReviewRoute))
+  (reviewFlowWith me task policy worker semanticReviewChoice))
 initialRoute <- R.forwardResult worker (firstCandidate (R.client flow))
 initialSnapshot <- R.call (reviewSnapshot (R.client flow)) ()
 pendingCleanup <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce

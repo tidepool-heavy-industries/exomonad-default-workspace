@@ -287,7 +287,7 @@ workflowExample = do
   void $ turn owner ("let sourceHead = " <> gitOidLiteral source
     <> "\nlet campaignName = \"review-workflow-accepted\" :: CampaignLabel"
     <> "\nlet coordinatorName = \"review-workflow-accepted-coordinator\" :: Text"
-    <> "\nlet chooseReviewRoute _ = pure (ReviewRouteResult HonorReview DeterministicRoute)")
+    <> "\nlet routeCriteria = [\"Escalate if acceptance or paths change.\"] :: [Text]")
   script owner "review-flow-workflow"
   pending <- turn owner "inspectFull (show pendingCleanup)"
   check "workflow refuses owner cleanup before the candidate settles"
@@ -336,7 +336,7 @@ workflowExample = do
   void $ turn owner2 ("let sourceHead = " <> gitOidLiteral source2
     <> "\nlet campaignName = \"review-workflow-escalated\" :: CampaignLabel"
     <> "\nlet coordinatorName = \"review-workflow-escalated-coordinator\" :: Text"
-    <> "\nlet chooseReviewRoute _ = pure (ReviewRouteResult (EscalateReview \"owner scope decision required\") DeterministicRoute)")
+    <> "\nlet routeCriteria = [] :: [Text]")
   script owner2 "review-flow-workflow"
   worker2 <- activation
   candidate2 <- checkpoint (checkActor worker2) "review-flow.txt" "escalated workflow\n" "workflow candidate"

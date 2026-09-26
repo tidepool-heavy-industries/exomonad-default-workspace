@@ -1,9 +1,9 @@
 -- retainedInterviews comes from review-flow-workflow-interview-result, after
 -- the owner has read and recorded each answer. Pending answers block cleanup.
 case retainedInterviews of
-  Nothing -> inspectFull ("interview pending; cleanup not requested" :: Text)
+  Nothing -> pure (inspectFull ("interview pending; cleanup not requested" :: Text))
   Just interviewReceipts | null interviewReceipts ->
-    inspectFull ("no reviewer interview; cleanup not requested" :: Text)
+    pure (inspectFull ("no reviewer interview; cleanup not requested" :: Text))
   Just interviewReceipts -> do
     current <- R.call (reviewSnapshot (R.client flow)) ()
     let terminal = case flowStage current of
@@ -17,9 +17,9 @@ case retainedInterviews of
             ReviewCleanupAttempted groups ->
               [(group, map cleanupReceiptSteps receipts) | (group, receipts) <- groups]
             _ -> []
-      inspectFull (show (map responseValue interviewReceipts, flowStage current,
+      pure (inspectFull (show (map responseValue interviewReceipts, flowStage current,
         flowReviewRoutes current, cleanupReceipt, releaseSteps,
-        flowCleanupResult afterCleanup))
-    else inspectFull ("review pending; cleanup not requested" :: Text)
+        flowCleanupResult afterCleanup)))
+    else pure (inspectFull ("review pending; cleanup not requested" :: Text))
 -- Inspect every CleanupReceipt step. StoppedReleasing requires its later host
 -- release notice; a stopped actor or AlreadyStopped is not release evidence.
