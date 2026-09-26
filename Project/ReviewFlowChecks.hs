@@ -234,6 +234,10 @@ effectfulRouting = do
     ("True" `Text.isInfixOf`)
   check "effectful route escalates a valid exact-source Repair without dispatching repair"
     (Text.strip routed == "True")
+  notice <- turn owner
+    "state <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (length (flowNotices state))"
+  check "owner receives one escalation notice"
+    (lastOutput notice == "1")
   missing <- turn owner
     "let selected = Candidate sourceHead [] []\nresult <- semanticReviewChoice (ReviewContext task selected (Repair selected [\"scope is unclear\"]) 0 1 [])\ninspectFull (show result)"
   check "semantic route without escalation criteria returns typed parent escalation"
