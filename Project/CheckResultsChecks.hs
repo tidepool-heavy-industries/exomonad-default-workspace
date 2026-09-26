@@ -176,7 +176,7 @@ completionRouting = do
       `Text.isInfixOf` Text.filter (/= ' ') (lastOutput setup))
   expired <- turn owner
     "expiredJob <- Cmd.start (fixture \"expired\")\nexpiredResult <- Cmd.quiet (collectFocused (FocusedRun spec expiredJob))\n(focusedExecution expiredResult, focusedPassed expiredResult, focusedEvidence expiredResult)"
-  check "a retained job with an incomplete output page cannot prove a pass"
+  check ("a retained job with an incomplete output page cannot prove a pass: " <> Text.take 240 (lastOutput expired))
     (all (`Text.isInfixOf` lastOutput expired)
       ["ExecutionUnknown", "False", "focused command output is incomplete"])
   cancelled <- turn owner

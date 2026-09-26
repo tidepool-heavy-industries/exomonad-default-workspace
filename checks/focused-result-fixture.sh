@@ -60,7 +60,7 @@ cat > "$evidence_dir/evidence.json" <<EOF
 EOF
 echo "focused test evidence: $evidence_dir/evidence.json" >&2
 if [[ "$1" == expired ]]; then
-  head -c 262144 /dev/zero | tr '\0' x >&2
+  head -c 2097152 /dev/zero | tr '\0' x >&2
   printf '\n' >&2
 fi
 cat "$evidence_dir/output.log" >&2
