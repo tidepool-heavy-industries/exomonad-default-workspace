@@ -148,10 +148,13 @@ managedEvidence = do
     , "managedRun <- R.call (probeStart (R.client boundProbe)) ()"
     , "Right managedWatcher <- watchChecks me NotifyAllTerminal [(\"managed\", managedRun)]"
     ]
-  verified <- awaitOutput owner
-    "checksSummary <$> readChecks managedWatcher"
-    (Text.isInfixOf "managed: passed")
-  check "watcher reports selected and executed facts from the original managed job"
+  void $ awaitOutput owner
+    "view <- readChecks managedWatcher\n[fmap (checkVerdict e) (checkOutcome e) | e <- checkEntries view]"
+    (Text.isInfixOf "Just Check")
+  verified <- turn owner
+    "view <- readChecks managedWatcher\n(checksSummary view, [(checkName e, fmap (focusedEvidence . checkFocused) (checkOutcome e), fmap checkCompletion (checkOutcome e)) | e <- checkEntries view])"
+  check ("watcher reports selected and executed facts from the original managed job: "
+      <> Text.take 1200 (lastOutput verified))
     (all (`Text.isInfixOf` verified)
       ["managed: passed", "matched 1", "runnable 1", "executed 1 passed", "fixture-source", "CommandExited 0", "CommandClean", "; artifact /"])
   accessible <- turn owner $ Text.unlines
