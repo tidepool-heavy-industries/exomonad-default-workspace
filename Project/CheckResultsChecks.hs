@@ -113,6 +113,7 @@ data EvidenceProbe mode = EvidenceProbe
   { probeState :: mode :- State ()
   , probeStart :: mode :- Call () (R.Reply FocusedRun)
   , probeRead :: mode :- Call Text (R.Reply Text)
+  , probeMove :: mode :- Call (Text, Text) (R.Reply Text)
   } deriving Generic
 
 type EvidenceProbeEffects = LocalEffects EvidenceProbe '[Replies, Commands]
@@ -131,11 +132,18 @@ evidenceProbe spec =
           Right job -> do
             observed <- Cmd.await job
             pure (Text.pack (show (Cmd.commandResult observed)))
+    , probeMove = \(from, to) -> do
+        started <- Cmd.tryStart (Cmd.withMemory (Cmd.MiB 64) (Cmd.argv ["mv", from, to]))
+        case started of
+          Left issue -> pure ("start refused: " <> Text.pack (show issue))
+          Right job -> do
+            observed <- Cmd.await job
+            pure (Text.pack (show (Cmd.commandResult observed)))
     }
 
--- The bound actor runs a check in an actual managed writable checkout. Its
--- virtual path does not grant an unbound actor access to the artifact; the
--- completion watcher uses the record emitted by the original job instead.
+-- The bound actor runs a check in an actual managed writable checkout. The
+-- completion watcher uses the record emitted by the original job even after
+-- the artifact moves, and an unbound actor cannot mutate that checkout.
 managedEvidence :: Member RecipeCheck effects => Eff effects ()
 managedEvidence = do
   owner <- root
@@ -152,7 +160,7 @@ managedEvidence = do
     "view <- readChecks managedWatcher\n[fmap (checkVerdict e) (checkOutcome e) | e <- checkEntries view]"
     (Text.isInfixOf "Just Check")
   verified <- turn owner
-    "view <- readChecks managedWatcher\n(checksSummary view, [(Project.CheckResults.checkName e, fmap (Cmd.stderr . focusedCommand . checkFocused) (checkOutcome e), fmap (focusedEvidence . checkFocused) (checkOutcome e), fmap checkCompletion (checkOutcome e)) | e <- checkEntries view])"
+    "view <- readChecks managedWatcher\n(checksSummary view, [(fmap (Cmd.stderr . focusedCommand . checkFocused) (checkOutcome e), fmap (focusedEvidence . checkFocused) (checkOutcome e), fmap checkCompletion (checkOutcome e)) | e <- checkEntries view])"
   let observed = lastOutput verified
   check ("watcher reports selected and executed facts from the original managed job: "
       <> Text.take 1200 observed)
@@ -165,13 +173,23 @@ managedEvidence = do
     ]
   check "the artifact exists in the managed owner's writable checkout"
     ("CommandExited 0" `Text.isInfixOf` lastOutput accessible)
+  moved <- turn owner $ Text.unlines
+    [ "let Just managedPath = focusedEvidencePath managedResult"
+    , "R.call (probeMove (R.client boundProbe)) (managedPath, managedPath <> \".retained\")"
+    ]
+  check "the managed owner moves the artifact after the job retains evidence"
+    ("CommandExited 0" `Text.isInfixOf` lastOutput moved)
   refused <- turn owner $ Text.unlines
     [ "let Just managedPath = focusedEvidencePath managedResult"
     , "unboundProbe <- R.start (evidenceProbe managedSpec)"
-    , "R.call (probeRead (R.client unboundProbe)) managedPath"
+    , "R.call (probeMove (R.client unboundProbe)) (managedPath <> \".retained\", managedPath)"
     ]
-  check "an unbound actor cannot open the managed checkout artifact"
+  check "an unbound actor cannot mutate the managed checkout artifact"
     (any (`Text.isInfixOf` lastOutput refused) ["CommandExited 1", "CommandUnauthorized"])
+  retained <- turn owner
+    "afterMove <- collectFocused managedRun\n(focusedExecution afterMove, focusedEvidence afterMove, focusedEvidencePath afterMove)"
+  check "the original retained job still proves execution after its artifact moves"
+    (all (`Text.isInfixOf` lastOutput retained) ["ExecutionPassed 1", "fixture-digest", "Just"])
   void $ turn owner "finishChecks managedWatcher\nR.finish boundProbe\nR.finish unboundProbe"
 
 -- The driver must service a live command's cleanup receipt while its resident
