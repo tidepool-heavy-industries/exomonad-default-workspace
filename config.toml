@@ -18,7 +18,7 @@ modules = [
   "Project.Investigate", "Project.Merge", "Project.Review", "Project.Search", "Project.History",
   "Project.FieldNotes", "Project.RebaseRouter", "Project.SupervisionProfiles",
   "Project.FieldNotesChecks", "Project.RebaseRouterChecks",
-  "Project.Service", "Project.Repository", "Project.CheckResults",
+  "Project.Service", "Project.Repository", "Project.CheckResults", "Project.FocusedGateExample",
   "Project.PrepareContinue", "Project.RetainedEvidence",
   "Project.AssumptionWatch", "Project.ParallelInvestigate", "Project.SlowCommandWatch",
   "Project.Interview", "Project.WorkflowExamples", "Project.ReviewFlow",
