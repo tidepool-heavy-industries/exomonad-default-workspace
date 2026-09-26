@@ -21,6 +21,7 @@ modules = [
   "Project.Service", "Project.Repository", "Project.CheckResults", "Project.FocusedGateExample",
   "Project.PrepareContinue", "Project.RetainedEvidence",
   "Project.AssumptionWatch", "Project.ParallelInvestigate", "Project.SlowCommandWatch",
+  "Project.BackgroundInvestigator",
   "Project.Interview", "Project.WorkflowExamples", "Project.ReviewFlow",
 ]
 spec = "AgentSpec.agentSpec"
@@ -28,6 +29,9 @@ checks = [
   "Project.FollowupChecks.bounded",
   "Project.AutomationChecks.integration",
   "Project.CheckResultsChecks.completionRouting",
+  "Project.CheckResultsChecks.retainedRecovery",
+  "Project.BackgroundInvestigatorChecks.terminalFailure",
+  "Project.BackgroundInvestigatorChecks.pendingProbe",
   "Project.RoutingChecks.routing",
   "Project.RoutingChecks.candidateHistory",
   "Project.RoutingChecks.notificationRetention",
