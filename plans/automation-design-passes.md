@@ -55,3 +55,24 @@ These are drafts with concrete consumers. The next pass should use the compiled
 notebook compositions to find further unnecessary context reconstruction, callbacks
 that are too weak, and machinery that duplicates an existing owner. Trial exposure
 starts only after integration and runtime checks, not when a module compiles.
+
+## Combined source and notebook check
+
+The integrated notebook namespace passed `Project.AutomationChecks.integration`
+with 23 assertions: handoff projection, typed assumption policies, retained
+interviews, terminal review readiness, preparation and bounded evidence recovery,
+and command probes plus slow observation. Definitions fingerprint:
+`cc25ee85b276ad10e5923dab21652c878ab8b3dfbee82226e7472929b69500e0`.
+The matched runtime is Tidepool `a60dc0fa8`; the frozen validation executable SHA256
+is `c6d7921dabb9ad4f6f9121d3ff03ba43cc69736934062a7253acca251e93eb4d`.
+The retained local log is `/tmp/automation-integration-validation/check.log`.
+No native model workers or providers ran. Notification checks establish attempted
+sends and retained refusals from the offline host, not delivery to a model.
+
+`SlowHandler` now permits effectful diagnosis without exposing private watcher
+state. The owner raises that computation inside its handler. Handoff composition
+uses existing candidate/review and check summaries, labels reports separately
+from observations, and leaves remaining obligations explicit. Test/example modules
+are imported by checks rather than added to every model's default namespace.
+Browser workflow execution and the automatic repair coordinator have separate
+pending gates; this combined check does not establish those workflows.

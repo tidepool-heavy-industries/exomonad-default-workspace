@@ -53,6 +53,7 @@ finishPreparation = R.finish
 preparationCompletion :: Member RecipeCheck effects => Eff effects ()
 preparationCompletion = do
   owner <- root
+  void $ turn owner "import Project.PrepareContinueChecks"
   void $ turn owner $ Text.unlines
     [ "okJob <- Cmd.start (Cmd.withMemory (Cmd.MiB 64) (Cmd.argv [\"sh\", \"-c\", \"echo ready\"]))"
     , "badJob <- Cmd.start (Cmd.withMemory (Cmd.MiB 64) (Cmd.argv [\"sh\", \"-c\", \"printf failure-diagnostic >&2; exit 7\"]))"

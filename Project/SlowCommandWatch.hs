@@ -17,7 +17,7 @@ module Project.SlowCommandWatch
   , watchSlowCommand
   ) where
 
-import Control.Monad.Freer (Eff, Member)
+import Control.Monad.Freer (Eff, Member, raise)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import GHC.Generics (Generic)
@@ -63,7 +63,8 @@ data SlowCommandWatch mode = SlowCommandWatch
 
 type SlowEffects = R.LocalEffects SlowCommandWatch '[Commands, Notifications, Actor, Jev]
 
-type SlowHandler = R.Handler SlowState SlowEffects
+-- The diagnostic can use effects but cannot edit the watcher's private state.
+type SlowHandler = Eff SlowEffects
 
 -- | The caller owns the supplied Job and supplies a diagnostic callback. It
 -- sees the exact job and one typed page per stream, including loss and
@@ -112,7 +113,7 @@ watchSlowCommand owner context job thresholdMilliseconds diagnosticCharacters re
                         _ -> do
                           stdoutPage <- Cmd.tryPage job Cmd.Stdout Cmd.OutputBeginning
                           stderrPage <- Cmd.tryPage job Cmd.Stderr Cmd.OutputBeginning
-                          diagnosis <- render (SlowObservation job latest stdoutPage stderrPage)
+                          diagnosis <- raise (render (SlowObservation job latest stdoutPage stderrPage))
                           let diagnostic = Text.take diagnosticCharacters diagnosis
                           beforeNotice <- Cmd.quiet $ Cmd.observe (Cmd.Observation 0 0) job
                           case beforeNotice of
