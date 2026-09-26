@@ -11,10 +11,12 @@
 {-# LANGUAGE TypeOperators #-}
 
 -- One Task's committed candidate, fresh review, and bounded same-child repair.
--- The owner still integrates accepted source and retires the worker group.
+-- The owner still integrates accepted source and retires the implementer group.
 module Project.ReviewFlow
-  ( ReviewFlow (reviewSnapshot, firstCandidate)
+  ( ReviewFlow (reviewSnapshot, reviewCleanup, firstCandidate)
   , ReviewFlowState (..)
+  , ReviewCleanupRequest (..)
+  , ReviewCleanupResult (..)
   , ReviewStage (..)
   , ReviewStop (..)
   , ReviewChoice (..)
@@ -25,6 +27,7 @@ module Project.ReviewFlow
   ) where
 
 import GHC.Generics (Generic)
+import Data.List (nub)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Tidepool.Actor as Actor
@@ -100,6 +103,21 @@ data ReviewStage
   | ReviewStopped ReviewStop
   deriving (Show)
 
+-- Cleanup is requested after the owner has read the terminal result and
+-- interviewed reviewers. A receipt records the actual stop outcome, including
+-- refusals and resources still being released or retained. StoppedReleasing
+-- remains unresolved here; the host's later release notice is observed
+-- separately and is not inferred from this state or from R.finish.
+data ReviewCleanupResult
+  = ReviewCleanupNotOwner ActorInputOrigin
+  | ReviewCleanupPending ReviewStage
+  | ReviewCleanupNoReviewer
+  | ReviewCleanupAttempted [(ForkGroupHandle, [CleanupReceipt])]
+  deriving (Show)
+
+data ReviewCleanupRequest = ReviewCleanupOnce | ReviewCleanupRetryRefused
+  deriving (Show, Eq)
+
 data ReviewFlowState = ReviewFlowState
   { flowStage :: ReviewStage
   , flowRepairCount :: Int
@@ -112,6 +130,7 @@ data ReviewFlowState = ReviewFlowState
   , flowRepairUpdates :: [Progress WorkProgress]
   , flowRepairRoutes :: [Forwarding (Outcome Candidate)]
   , flowNotices :: [Either NotificationError NotificationReceipt]
+  , flowCleanupResult :: Maybe ReviewCleanupResult
   }
 
 instance Show ReviewFlowState where
@@ -121,10 +140,12 @@ instance Show ReviewFlowState where
     ++ " reviewers=" ++ show (length (flowReviewerRequests state))
     ++ " repairRequests=" ++ show (length (flowRepairRequests state))
     ++ " notices=" ++ show (length (flowNotices state))
+    ++ " cleanup=" ++ show (flowCleanupResult state)
 
 data ReviewFlow mode = ReviewFlow
   { flowStateField :: mode :- State ReviewFlowState
   , reviewSnapshot :: mode :- Call () (R.Reply ReviewFlowState)
+  , reviewCleanup :: mode :- Call ReviewCleanupRequest (R.Reply ReviewCleanupResult)
   , firstCandidate :: mode :- Call (Either ResponseFailure (ResponseResult (Outcome Candidate))) NoReply
   , reviewerStarted :: mode :- Call (Candidate, Response (Outcome ReviewDecision), Progress WorkProgress) NoReply
   , reviewerCorrectionStarted :: mode :- Call (Candidate, Response (Outcome ReviewDecision), Progress WorkProgress) NoReply
@@ -145,8 +166,18 @@ reviewFlow
   -> ActorSpec ReviewFlow ReviewFlowEffects
 reviewFlow owner task policy implementer =
   R.definition "review-flow" (Actor.Selected knownEffects) ReviewFlow
-    { flowStateField = ReviewFlowState AwaitingCandidate 0 False [] [] [] [] [] [] [] []
+    { flowStateField = ReviewFlowState AwaitingCandidate 0 False [] [] [] [] [] [] [] [] Nothing
     , reviewSnapshot = \() -> R.get
+    , reviewCleanup = \request -> do
+        origin <- R.sender @ReviewFlow
+        if origin /= ActorMessageFrom (agentIdentity owner)
+          then pure (ReviewCleanupNotOwner origin)
+          else do
+            state <- R.get
+            case flowStage state of
+              ReviewAccepted _ -> cleanupReviewers request state
+              ReviewStopped _ -> cleanupReviewers request state
+              pending -> pure (ReviewCleanupPending pending)
     , firstCandidate = \result -> do
         own <- R.self @ReviewFlow
         acceptCandidate own implementer result
@@ -198,6 +229,33 @@ reviewFlow owner task policy implementer =
           _ -> publish (ReviewStopped ReviewerOutOfOrder)
     }
   where
+    cleanupReviewers request state = do
+      let groups = nub [ group
+            | reviewer <- flowReviewerRequests state
+            , Just group <- [forkGroupHandle reviewer] ]
+          prior = case flowCleanupResult state of
+            Just (ReviewCleanupAttempted receipts) -> receipts
+            _ -> []
+      result <- case groups of
+        [] -> pure ReviewCleanupNoReviewer
+        _ -> ReviewCleanupAttempted <$> mapM (cleanupGroup request prior) groups
+      R.modify' (\current -> current { flowCleanupResult = Just result })
+      pure result
+
+    cleanupGroup request prior group = case lookup group prior of
+      Just receipts | not (shouldRetry request receipts) -> pure (group, receipts)
+      earlier -> do
+        receipt <- executeCleanup =<< planCleanup group
+        pure (group, maybe [] id earlier ++ [receipt])
+
+    shouldRetry ReviewCleanupOnce _ = False
+    shouldRetry ReviewCleanupRetryRefused receipts = case reverse receipts of
+      latest : _ -> case cleanupReceiptSteps latest of
+        [CleanupBlocked _] -> True
+        [CleanupStalePlan] -> True
+        _ -> False
+      [] -> True
+
     checkReviewer own selected reviewer result = case result of
       Right receipt
         | executionRequest (responseExecution receipt) /= requestId reviewer ->

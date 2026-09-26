@@ -19,6 +19,9 @@ oneComponent = do
     <> "\nlet coordinatorName = \"review-flow-coordinator-first\" :: Text"
     <> "\nlet sourcePlan = RequiresSiblingCommits [sourceHead]")
   script owner "review-flow-loop"
+  pending <- turn owner "cleanup <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce\ninspectFull (show cleanup)"
+  check "cleanup refuses while the candidate is pending"
+    ("ReviewCleanupPending AwaitingCandidate" `Text.isInfixOf` output pending)
   implementer <- activation
   first <- checkpoint (checkActor implementer) "review-flow.txt" "first candidate\n" "initial candidate"
   void $ turn (checkActor implementer)
@@ -31,6 +34,12 @@ oneComponent = do
     ("ReviewingCandidate" `Text.isInfixOf` firstState)
   headSeen <- git (checkActor reviewer) ["rev-parse", "HEAD"]
   check "first review starts fresh at the submitted candidate" (headSeen == first)
+  pendingReview <- turn owner "cleanup <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce\ninspectFull (show cleanup)"
+  check "cleanup refuses with a live reviewer"
+    ("ReviewCleanupPending (ReviewingCandidate" `Text.isInfixOf` output pendingReview)
+  firstInterview <- turn (checkActor reviewer) "let cleanupInterview = \"initial reviewer found a component issue\" :: Text\ncleanupInterview"
+  check "first reviewer interview is available before cleanup"
+    ("initial reviewer found a component issue" `Text.isInfixOf` output firstInterview)
   void $ turn (checkActor reviewer)
     "let request = sessionInput :: ReviewRequest\nrespond (Produced (Repair (reviewInput request) []))"
   correction <- activation
@@ -41,6 +50,9 @@ oneComponent = do
   repairWorker <- activation
   check "repair returns directly to the retained implementer"
     (checkActor repairWorker == checkActor implementer)
+  pendingRepair <- turn owner "cleanup <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce\ninspectFull (show cleanup)"
+  check "cleanup refuses while repair is pending"
+    ("ReviewCleanupPending (AwaitingRepair" `Text.isInfixOf` output pendingRepair)
   revised <- checkpoint (checkActor repairWorker) "review-flow.txt" "repaired candidate\n" "repair candidate"
   void $ turn (checkActor repairWorker)
     ("respond (Produced (Candidate " <> gitOidLiteral revised <> " [] [\"owner integration\"]))")
@@ -48,6 +60,9 @@ oneComponent = do
   secondHead <- git (checkActor second) ["rev-parse", "HEAD"]
   check "revised source gets a new exact-source reviewer"
     (checkActor second /= checkActor reviewer && secondHead == revised)
+  interview <- turn (checkActor second) "let cleanupInterview = \"reviewer checked the repaired source\" :: Text\ncleanupInterview"
+  check "reviewer interview is retained before cleanup"
+    ("reviewer checked the repaired source" `Text.isInfixOf` output interview)
   void $ turn (checkActor second)
     "let request = sessionInput :: ReviewRequest\nrespond (Produced (Accepted (ReviewedCandidate (reviewBasis request) (reviewInput request) [\"read exact source\"] \"accepted\")))"
   accepted <- awaitOutput owner
@@ -57,6 +72,16 @@ oneComponent = do
     ("ReviewAccepted" `Text.isInfixOf` accepted
       && revised `Text.isInfixOf` accepted
       && "1,3,1" `Text.isInfixOf` accepted)
+  script owner "review-flow-cleanup"
+  cleanup <- turn owner "case cleanup of { ReviewCleanupAttempted groups -> inspectFull (length groups, map (length . snd) groups, map (map cleanupReceiptComplete . snd) groups); _ -> inspectFull (-1 :: Int, [] :: [Int], [] :: [[Bool]) }"
+  check "coordinator records cleanup of both distinct reviewer groups"
+    ("(2,[1,1]" `Text.isInfixOf` output cleanup)
+  repeated <- turn owner "again <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce\nstate <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (show again == show cleanup && show (flowCleanupResult state) == show (Just cleanup))"
+  check "repeat and snapshot retain original cleanup outcomes"
+    (lastOutput repeated == "True")
+  retry <- turn owner "retry <- R.call (reviewCleanup (R.client flow)) ReviewCleanupRetryRefused\nlet refused receipts = case reverse receipts of { latest:_ -> case cleanupReceiptSteps latest of { [CleanupBlocked _] -> True; [CleanupStalePlan] -> True; _ -> False }; [] -> True }\ncase (cleanup, retry) of { (ReviewCleanupAttempted before, ReviewCleanupAttempted after) -> inspectFull (length before == length after && and [length new == length old + (if refused old then 1 else 0) | ((_,old),(_,new)) <- zip before after]); _ -> inspectFull False }"
+  check "explicit retry only reruns previously refused groups"
+    (lastOutput retry == "True")
   void $ turn owner "R.finish flow"
 
 failurePaths :: Member RecipeCheck effects => Eff effects ()
@@ -81,6 +106,9 @@ failurePaths = do
   check "zero repair budget stops without dispatching another request"
     ("RepairBudgetSpent" `Text.isInfixOf` budget
       && "0,0)" `Text.isInfixOf` budget)
+  budgetCleanup <- turn owner2 "receipt <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce\ninspectFull (case receipt of { ReviewCleanupAttempted groups -> (length groups, map (map cleanupReceiptComplete . snd) groups); _ -> (0 :: Int, []) })"
+  check "stopped review still retains its reviewer cleanup receipt"
+    ("(1," `Text.isInfixOf` output budgetCleanup)
   void $ turn owner2 "R.finish flow"
   void restart
   owner3 <- root
@@ -102,6 +130,9 @@ failurePaths = do
       && base3 `Text.isInfixOf` stopped
       && actual `Text.isInfixOf` stopped
       && ",0)" `Text.isInfixOf` stopped)
+  none <- turn owner3 "cleanup <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce\ninspectFull (show cleanup)"
+  check "terminal flow without a reviewer has no reviewer group to clean"
+    ("ReviewCleanupNoReviewer" `Text.isInfixOf` output none)
   void $ turn owner3 "R.finish flow"
 
 sourcePreflight :: Member RecipeCheck effects => Eff effects ()
