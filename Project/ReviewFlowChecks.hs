@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Project.ReviewFlowChecks (oneComponent, failurePaths, sourcePreflight, emptyFindings, effectfulRouting) where
+module Project.ReviewFlowChecks (oneComponent, failurePaths, sourcePreflight, emptyFindings, effectfulRouting, workflowExample) where
 
 import Prelude hiding (readFile, writeFile)
 import Control.Monad (void)
@@ -275,4 +275,91 @@ effectfulRouting = do
     ("ReviewAccepted" `Text.isInfixOf` accepted
       && "DeterministicRoute" `Text.isInfixOf` accepted)
   void $ turn owner2 "R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce"
+  void $ turn owner2 "R.finish flow"
+
+-- A fixture reviewer supplies the interview answer. This checks that the
+-- owner retains an actual response before cleanup; it does not assess an
+-- interview's quality or infer host release from the cleanup receipt.
+workflowExample :: Member RecipeCheck effects => Eff effects ()
+workflowExample = do
+  owner <- root
+  source <- git owner ["rev-parse", "HEAD"]
+  void $ turn owner ("let sourceHead = " <> gitOidLiteral source
+    <> "\nlet campaignName = \"review-workflow-accepted\" :: CampaignLabel"
+    <> "\nlet coordinatorName = \"review-workflow-accepted-coordinator\" :: Text"
+    <> "\nlet chooseReviewRoute _ = pure (ReviewRouteResult HonorReview DeterministicRoute)")
+  script owner "review-flow-workflow"
+  pending <- turn owner "inspectFull (show pendingCleanup)"
+  check "workflow refuses owner cleanup before the candidate settles"
+    ("ReviewCleanupPending AwaitingCandidate" `Text.isInfixOf` output pending)
+  worker <- activation
+  candidate <- checkpoint (checkActor worker) "review-flow.txt" "accepted workflow\n" "workflow candidate"
+  void $ turn (checkActor worker)
+    ("respond (Produced (Candidate " <> gitOidLiteral candidate <> " [] []))")
+  reviewer <- activation
+  void $ turn (checkActor reviewer)
+    "let request = sessionInput :: ReviewRequest\nrespond (Produced (Accepted (ReviewedCandidate (reviewBasis request) (reviewInput request) [\"read exact source\"] \"accepted\")))"
+  accepted <- awaitOutput owner
+    "state <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (show (flowStage state))"
+    ("ReviewAccepted" `Text.isInfixOf`)
+  check "workflow reads exact accepted terminal state"
+    ("ReviewAccepted" `Text.isInfixOf` accepted && candidate `Text.isInfixOf` accepted)
+  script owner "review-flow-workflow-interview"
+  script owner "review-flow-workflow-interview-result"
+  pendingInterview <- turn owner "inspectFull (show retainedInterviews)"
+  check "delivered interview request is not treated as an answer"
+    ("Nothing" `Text.isInfixOf` output pendingInterview)
+  pendingClose <- readFile owner (checkSource "review-flow-workflow-close") >>= turn owner
+  beforeAnswer <- turn owner "state <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (show (flowCleanupResult state))"
+  check "workflow leaves cleanup unrequested before the answer"
+    ("interview pending; cleanup not requested" `Text.isInfixOf` output pendingClose
+      && "Nothing" `Text.isInfixOf` output beforeAnswer)
+  interview <- activation
+  check "interview request returns to the retained reviewer"
+    (checkActor interview == checkActor reviewer)
+  void $ turn (checkActor interview)
+    "respond (\"Observed exact source and typed review; the handoff waited for owner snapshot; try one terminal evidence summary.\" :: Text)"
+  script owner "review-flow-workflow-interview-result"
+  answer <- turn owner "inspectFull (show retainedInterviews)"
+  check "owner retains the reviewer answer receipt before cleanup"
+    ("Observed exact source" `Text.isInfixOf` output answer)
+  script owner "review-flow-workflow-close"
+  closed <- turn owner "state <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (show (flowStage state, flowCleanupResult state))"
+  check "accepted workflow retains typed owner cleanup after interview"
+    ("ReviewAccepted" `Text.isInfixOf` output closed
+      && "ReviewCleanupAttempted" `Text.isInfixOf` output closed)
+  void $ turn owner "R.finish flow"
+
+  void restart
+  owner2 <- root
+  source2 <- git owner2 ["rev-parse", "HEAD"]
+  void $ turn owner2 ("let sourceHead = " <> gitOidLiteral source2
+    <> "\nlet campaignName = \"review-workflow-escalated\" :: CampaignLabel"
+    <> "\nlet coordinatorName = \"review-workflow-escalated-coordinator\" :: Text"
+    <> "\nlet chooseReviewRoute _ = pure (ReviewRouteResult (EscalateReview \"owner scope decision required\") DeterministicRoute)")
+  script owner2 "review-flow-workflow"
+  worker2 <- activation
+  candidate2 <- checkpoint (checkActor worker2) "review-flow.txt" "escalated workflow\n" "workflow candidate"
+  void $ turn (checkActor worker2)
+    ("respond (Produced (Candidate " <> gitOidLiteral candidate2 <> " [] []))")
+  reviewer2 <- activation
+  void $ turn (checkActor reviewer2)
+    "let request = sessionInput :: ReviewRequest\nrespond (Produced (Repair (reviewInput request) [\"change assigned acceptance\"]))"
+  escalated <- awaitOutput owner2
+    "state <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (show (flowStage state, flowRepairCount state, length (flowRepairRequests state)))"
+    ("ReviewEscalated" `Text.isInfixOf`)
+  check "workflow escalates without promoting Repair or requesting implementation"
+    ("ReviewEscalated" `Text.isInfixOf` escalated && "0,0)" `Text.isInfixOf` escalated)
+  script owner2 "review-flow-workflow-interview"
+  interview2 <- activation
+  check "escalated reviewer remains available for precleanup interview"
+    (checkActor interview2 == checkActor reviewer2)
+  void $ turn (checkActor interview2)
+    "respond (\"Observed a scope conflict at exact source; owner decision is required; try clearer acceptance.\" :: Text)"
+  script owner2 "review-flow-workflow-interview-result"
+  script owner2 "review-flow-workflow-close"
+  closed2 <- turn owner2 "state <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (show (flowStage state, flowCleanupResult state))"
+  check "escalated workflow retains typed cleanup after interview"
+    ("ReviewEscalated" `Text.isInfixOf` output closed2
+      && "ReviewCleanupAttempted" `Text.isInfixOf` output closed2)
   void $ turn owner2 "R.finish flow"
