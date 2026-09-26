@@ -45,9 +45,10 @@ completionRouting = do
   check "completion keeps cleanup and parsed evidence separately"
     (all (`Text.isInfixOf` output details) ["CommandClean", "fixture-digest", "focused runner did not report"])
   mismatch <- turn owner
-    "view <- readChecks watcher\nlet [passEntry, failEntry, _] = checkEntries view\nlet Just passOutcome = checkOutcome passEntry\nlet Just failOutcome = checkOutcome failEntry\nlet invalid = passOutcome { checkCompletion = checkCompletion failOutcome }\n(checkExecution passEntry invalid, checkSourceAssurance passEntry invalid)"
-  check "mismatched terminal receipt cannot verify execution or source"
-    (all (`Text.isInfixOf` lastOutput mismatch) ["ExecutionUnknown", "SourceUnrecorded"])
+    "view <- readChecks watcher\nlet [passEntry, failEntry, _] = checkEntries view\nlet Just passOutcome = checkOutcome passEntry\nlet Just failOutcome = checkOutcome failEntry\nlet invalid = passOutcome { checkCompletion = checkCompletion failOutcome }\nlet FocusedRun _ wrongJob = checkRun failEntry\nlet Cmd.Finished _ result output = focusedCommand (checkFocused passOutcome)\nlet forged = (checkFocused passOutcome) { focusedCommand = Cmd.Finished wrongJob result output }\nlet invalidJob = passOutcome { checkFocused = forged }\n(checkExecution passEntry invalid, checkSourceAssurance passEntry invalid, checkExecution passEntry invalidJob, checkSourceAssurance passEntry invalidJob)"
+  check "mismatched terminal receipt or job cannot verify execution or source"
+    ("(ExecutionUnknown,SourceUnrecorded,ExecutionUnknown,SourceUnrecorded)"
+      `Text.isInfixOf` Text.filter (/= ' ') (lastOutput mismatch))
   productFailure <- turn owner
     "view <- readChecks watcher\nlet [_, failedEntry, _] = checkEntries view\nlet Just failedOutcome = checkOutcome failedEntry\ndiagnosis <- diagnoseFocused (checkFocused failedOutcome)\n(diagnosisBranch diagnosis, diagnosisExcerpt diagnosis)"
   check "assertion failure diagnosis retains a bounded output excerpt"

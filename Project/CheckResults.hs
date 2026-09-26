@@ -140,9 +140,10 @@ checkSourceAssurance _ outcome = focusedSourceAssurance (checkFocused outcome)
 
 matchingReceipt :: CheckEntry -> CheckOutcome -> Bool
 matchingReceipt entry outcome =
-  let FocusedRun spec _ = checkRun entry
+  let FocusedRun spec job = checkRun entry
       result = checkFocused outcome
   in focusedSpec result == spec
+    && Cmd.completedJob (focusedCommand result) == job
     && Cmd.commandResult (focusedCommand result) == checkCompletion outcome
 
 checkLine :: CheckEntry -> Text
