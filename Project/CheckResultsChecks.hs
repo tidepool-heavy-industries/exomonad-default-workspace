@@ -58,7 +58,7 @@ completionRouting = do
   check ("late completion, failed exit and missing evidence all settle: " <> observed)
     (all (`Text.isInfixOf` observed) ["Just CheckPassed", "Just CheckFailed", "Just CheckUnknown"])
   details <- turn owner
-    "view <- readChecks watcher\n[(checkName e, fmap (Cmd.commandCleanup . checkCompletion) (checkOutcome e), fmap (focusedEvidence . checkFocused) (checkOutcome e)) | e <- checkEntries view]"
+    "view <- readChecks watcher\n[(Project.CheckResults.checkName e, fmap (Cmd.commandCleanup . checkCompletion) (checkOutcome e), fmap (focusedEvidence . checkFocused) (checkOutcome e)) | e <- checkEntries view]"
   check "completion keeps cleanup and parsed evidence separately"
     (all (`Text.isInfixOf` output details) ["CommandClean", "fixture-digest", "focused runner did not report"])
   mismatch <- turn owner
@@ -152,7 +152,7 @@ managedEvidence = do
     "view <- readChecks managedWatcher\n[fmap (checkVerdict e) (checkOutcome e) | e <- checkEntries view]"
     (Text.isInfixOf "Just Check")
   verified <- turn owner
-    "view <- readChecks managedWatcher\n(checksSummary view, [(checkName e, fmap (Cmd.stderr . focusedCommand . checkFocused) (checkOutcome e), fmap (focusedEvidence . checkFocused) (checkOutcome e), fmap checkCompletion (checkOutcome e)) | e <- checkEntries view])"
+    "view <- readChecks managedWatcher\n(checksSummary view, [(Project.CheckResults.checkName e, fmap (Cmd.stderr . focusedCommand . checkFocused) (checkOutcome e), fmap (focusedEvidence . checkFocused) (checkOutcome e), fmap checkCompletion (checkOutcome e)) | e <- checkEntries view])"
   let observed = lastOutput verified
   check ("watcher reports selected and executed facts from the original managed job: "
       <> Text.take 1200 observed)
