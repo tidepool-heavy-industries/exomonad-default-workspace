@@ -7,6 +7,7 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -34,7 +35,7 @@ module Project.ReviewFlow
   ) where
 
 import GHC.Generics (Generic)
-import Control.Monad.Freer (Eff, Member, raise)
+import Control.Monad.Freer (Eff, Member)
 import Data.List (nub)
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -265,11 +266,12 @@ reviewFlow owner task policy implementer =
       (flowReviewChoice policy (routeCandidate context) (routeDecision context))
       DeterministicRoute)
 
--- The policy receives domain facts through ordinary effects; the coordinator
--- alone records its result and changes the flow stage.
+-- The callback can ask Jev but cannot access the coordinator's private state
+-- or exercise its fork, control, command, and notification effects. The
+-- coordinator alone records the result and changes the flow stage.
 reviewFlowWith
   :: AgentRef -> Task -> ReviewFlowPolicy -> Response (Outcome Candidate)
-  -> (ReviewContext -> Eff ReviewFlowEffects ReviewRouteResult)
+  -> (forall effects. Member Jev effects => ReviewContext -> Eff effects ReviewRouteResult)
   -> ActorSpec ReviewFlow ReviewFlowEffects
 reviewFlowWith owner task policy implementer choose =
   R.definition "review-flow" (Actor.Selected knownEffects) ReviewFlow
@@ -458,7 +460,7 @@ reviewFlowWith owner task policy implementer choose =
               count <- R.gets flowRepairCount
               let context = ReviewContext task selected decision count
                     (flowRepairLimit policy) (flowEscalationCriteria policy)
-              route <- raise (choose context)
+              route <- choose context
               R.modify' (\state -> state
                 { flowReviewRoutes = flowReviewRoutes state ++ [(context, route)] })
               case routeChoice route of
