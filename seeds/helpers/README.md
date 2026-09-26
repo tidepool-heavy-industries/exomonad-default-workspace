@@ -31,8 +31,9 @@ to the original start. A missing notebook binding does not mean the job is
 missing, and recovery never submits it again. A prepared run without its
 preparation marker remains `PreparationUnknown`.
 
-For several named checks, build `[PlanCheck]` values with a definition,
-memory reservation and `WithoutPreparation` or `PrepareWith` function.
+For several named checks, use `plannedCheck definition memory preparation` to
+build `[PlanCheck]` values. Each has a name, memory reservation and
+`WithoutPreparation` or `PrepareWith` function.
 The function receives the candidate at invocation and returns prerequisite
 argv for that original job. Call `Right started <- startCheckPlan me candidate checks`.
 In a later cell use `report <- readCheckPlan started`, then `planSummary report` and

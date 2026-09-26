@@ -55,14 +55,13 @@ completionRouting = do
   owner <- root
   let fixture = Text.pack workspaceRoot <> "/checks/focused-result-fixture.sh"
       setup = Text.unlines
-        [ "import SessionHelpers"
-        , "let spec = FocusedSpec \"fixture check\" \"fixture-source\" \"fixture-package\" \"lib\" \"fixture::one\" 1"
+        [ "let spec = FocusedSpec \"fixture check\" \"fixture-source\" \"fixture-package\" \"lib\" \"fixture::one\" 1"
         , "let fixture kind = Cmd.withMemory (Cmd.MiB 256) (Cmd.argv [\"bash\", " <> Text.pack (show fixture) <> ", kind])"
         , "late <- Cmd.start (fixture \"pass\")"
         ]
   void $ turn owner setup
   planRefusals <- turn owner
-    "let zero = PlanCheck { planDefinition = CheckDefinition \"zero\" \"fixture-package\" \"lib\" \"fixture::one\" 0, planMemory = Cmd.MiB 64, planPreparation = WithoutPreparation }\nlet empty = PlanCheck { planDefinition = CheckDefinition \"empty preparation\" \"fixture-package\" \"lib\" \"fixture::one\" 1, planMemory = Cmd.MiB 64, planPreparation = PrepareWith (const []) }\nRight refusedPlan <- startCheckPlan me (\"0123456789abcdef0123456789abcdef01234567\" :: GitOid) [zero, empty]\nrefusedReport <- readCheckPlan refusedPlan\n(planPassed refusedReport, planSummary refusedReport, planWatcher refusedPlan)"
+    "let zero = PlanCheck { planName = \"zero\", planSpec = const (spec { focusedExpected = 0 }), planMemory = Cmd.MiB 64, planPreparation = WithoutPreparation }\nlet empty = PlanCheck { planName = \"empty preparation\", planSpec = const spec, planMemory = Cmd.MiB 64, planPreparation = PrepareWith (const []) }\nRight refusedPlan <- startCheckPlan me (\"0123456789abcdef0123456789abcdef01234567\" :: GitOid) [zero, empty]\nrefusedReport <- readCheckPlan refusedPlan\n(planPassed refusedReport, planSummary refusedReport, planWatcher refusedPlan)"
   check "plan retains all setup refusals without admitting a command or watcher"
     (all (`Text.isInfixOf` lastOutput planRefusals)
       ["False", "not all requested checks ran", "NonPositiveExpected 0", "EmptyPreparation", "Nothing"])
