@@ -82,7 +82,7 @@ completionRouting = do
     "view <- readChecks summarizer\nif length (checkNotices view) == 1 then checksSummary view else \"pending\""
     (Text.isInfixOf "late: passed")
   check "aggregate policy records one named summary attempt after late completions"
-    (all (`Text.isInfixOf` summary) ["late: passed", "failed: failed", "matched 1", "runnable 1", "CommandExited 0", "CommandClean"])
+    (all (`Text.isInfixOf` summary) ["late: passed", "failed: failed", "matched 1", "runnable 1", "CommandExited 0", "CommandClean", "; artifact /"])
   void $ turn owner "finishChecks summarizer"
 
   void $ turn owner
@@ -153,7 +153,7 @@ managedEvidence = do
     (Text.isInfixOf "managed: passed")
   check "watcher reports selected and executed facts from the original managed job"
     (all (`Text.isInfixOf` verified)
-      ["managed: passed", "matched 1", "runnable 1", "executed 1 passed", "fixture-source", "CommandExited 0", "CommandClean"])
+      ["managed: passed", "matched 1", "runnable 1", "executed 1 passed", "fixture-source", "CommandExited 0", "CommandClean", "; artifact /"])
   accessible <- turn owner $ Text.unlines
     [ "managedResult <- collectFocused managedRun"
     , "let Just managedPath = focusedEvidencePath managedResult"

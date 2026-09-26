@@ -157,6 +157,7 @@ checkLine entry = checkName entry <> ": " <> case checkOutcome entry of
       <> maybe "" (" @" <>) (recordSource =<< either (const Nothing) Just (focusedEvidence (checkFocused outcome)))
       <> "; " <> Text.pack (show (Cmd.commandOutcome (checkCompletion outcome)))
       <> "; cleanup " <> Text.pack (show (Cmd.commandCleanup (checkCompletion outcome)))
+      <> "; artifact " <> maybe "unknown" id (focusedEvidencePath (checkFocused outcome))
       <> either ("; evidence unknown: " <>) (const "; evidence recorded")
            (focusedEvidence (checkFocused outcome))
 
