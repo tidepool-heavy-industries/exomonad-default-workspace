@@ -1,7 +1,8 @@
 # Focused test helper seed
 
-Copy `SessionHelpers.hs` and `SessionHelpers/TestEvidence.hs` into a session's
-`.exomonad/helpers/` draft and publish with `reload_helpers`. Customize the
+The root actor starts with these files in its `.exomonad/helpers/` draft. Edit
+them there and publish with `reload_helpers`; forked actors inherit the draft
+as it stands when they fork. Customize the
 package, target, filter, expected count and diagnostic alternatives for the
 component under test. The helper starts `scripts/cargo-focused-test` as a
 background command; its retained JSON contains the selected artifact, source,
