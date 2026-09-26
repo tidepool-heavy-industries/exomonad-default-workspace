@@ -153,9 +153,10 @@ managedEvidence = do
     (Text.isInfixOf "Just Check")
   verified <- turn owner
     "view <- readChecks managedWatcher\n(checksSummary view, [(checkName e, fmap (focusedEvidence . checkFocused) (checkOutcome e), fmap checkCompletion (checkOutcome e)) | e <- checkEntries view])"
+  let observed = lastOutput verified
   check ("watcher reports selected and executed facts from the original managed job: "
-      <> Text.take 1200 (lastOutput verified))
-    (all (`Text.isInfixOf` verified)
+      <> Text.take 1200 observed)
+    (all (`Text.isInfixOf` observed)
       ["managed: passed", "matched 1", "runnable 1", "executed 1 passed", "fixture-source", "CommandExited 0", "CommandClean", "; artifact /"])
   accessible <- turn owner $ Text.unlines
     [ "managedResult <- collectFocused managedRun"
