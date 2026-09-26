@@ -21,10 +21,14 @@ modules = [
   "Project.Service", "Project.Repository", "Project.CheckResults", "Project.FocusedGateExample",
   "Project.PrepareContinue", "Project.RetainedEvidence",
   "Project.AssumptionWatch", "Project.ParallelInvestigate", "Project.SlowCommandWatch",
+  "Project.WorkflowReminders", "Project.WorkflowReminderExamples", "Project.WorkflowReminderRoutingChecks",
   "Project.Interview", "Project.WorkflowExamples", "Project.ReviewFlow",
 ]
 spec = "AgentSpec.agentSpec"
 checks = [
+  "Project.WorkflowReminderChecks.bounded",
+  "Project.WorkflowReminderRoutingChecks.questionRouting",
+  "Project.WorkflowReminderChecks.semanticCases",
   "Project.FollowupChecks.bounded",
   "Project.AutomationChecks.integration",
   "Project.CheckResultsChecks.completionRouting",
