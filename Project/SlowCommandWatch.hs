@@ -11,7 +11,9 @@ module Project.SlowCommandWatch
   ( SlowCommandWatch (slowView)
   , SlowState (..)
   , SlowAlert (..)
+  , SlowObservation (..)
   , SlowWatchIssue (..)
+  , SlowHandler
   , watchSlowCommand
   ) where
 
@@ -23,13 +25,20 @@ import qualified Tidepool.Actor as Actor
 import qualified Tidepool.Actor.Record as R
 import Tidepool.Actors.Exomonad
 import qualified Tidepool.Command as Cmd
-import Tidepool.Effects.Core (Actor, Commands, Notifications)
+import Tidepool.Effects.Core (Actor, Commands, Jev, Notifications)
 import Tidepool.Effects.Row (knownEffects)
 
 data SlowAlert = SlowAlert
   { alertStatus :: Cmd.CommandStatus
   , alertDiagnostic :: Text
   , alertReceipt :: Either NotificationError NotificationReceipt
+  } deriving (Show)
+
+data SlowObservation = SlowObservation
+  { observedSlowJob :: Cmd.Job
+  , observedSlowStatus :: Cmd.CommandStatus
+  , observedSlowStdout :: Either Cmd.CommandError Cmd.OutputPage
+  , observedSlowStderr :: Either Cmd.CommandError Cmd.OutputPage
   } deriving (Show)
 
 data SlowWatchIssue
@@ -52,16 +61,18 @@ data SlowCommandWatch mode = SlowCommandWatch
   , slowCompleted :: mode :- Event Cmd.CommandResult
   } deriving Generic
 
-type SlowEffects = R.LocalEffects SlowCommandWatch '[Commands, Notifications, Actor]
+type SlowEffects = R.LocalEffects SlowCommandWatch '[Commands, Notifications, Actor, Jev]
 
--- | The caller owns the supplied Job and supplies a pure diagnostic renderer.
--- The renderer sees one typed page per stream, including loss and completeness
--- fields; its notice uses `diagnosticCharacters` (at most 8192). Invalid
+type SlowHandler = R.Handler SlowState SlowEffects
+
+-- | The caller owns the supplied Job and supplies a diagnostic callback. It
+-- sees the exact job and one typed page per stream, including loss and
+-- completeness fields; its notice uses `diagnosticCharacters` (at most 8192). Invalid
 -- policy is refused before the actor starts.
 -- This actor sends one actionable notice if the job is still running
--- after a wait of `thresholdMilliseconds` since this actor attaches
+-- after a wait of `thresholdMilliseconds` from its first observation
 -- (at most 30 seconds), then records any later completion. It does not
--- infer how long the job ran before attachment or start, cancel or retry it.
+-- infer prior elapsed time, and never starts, cancels or retries the Job.
 watchSlowCommand
   :: Member Actor effects
   => AgentRef
@@ -69,10 +80,7 @@ watchSlowCommand
   -> Cmd.Job
   -> Int
   -> Int
-  -> (Cmd.CommandStatus
-      -> Either Cmd.CommandError Cmd.OutputPage
-      -> Either Cmd.CommandError Cmd.OutputPage
-      -> Text)
+  -> (SlowObservation -> SlowHandler Text)
   -> Eff effects (Either SlowWatchIssue (ActorHandle SlowCommandWatch))
 watchSlowCommand owner context job thresholdMilliseconds diagnosticCharacters render
   | thresholdMilliseconds < 0 = pure (Left (NegativeObservationThreshold thresholdMilliseconds))
@@ -104,8 +112,8 @@ watchSlowCommand owner context job thresholdMilliseconds diagnosticCharacters re
                         _ -> do
                           stdoutPage <- Cmd.tryPage job Cmd.Stdout Cmd.OutputBeginning
                           stderrPage <- Cmd.tryPage job Cmd.Stderr Cmd.OutputBeginning
-                          let diagnostic = Text.take diagnosticCharacters $ render latest
-                                stdoutPage stderrPage
+                          diagnosis <- render (SlowObservation job latest stdoutPage stderrPage)
+                          let diagnostic = Text.take diagnosticCharacters diagnosis
                           beforeNotice <- Cmd.quiet $ Cmd.observe (Cmd.Observation 0 0) job
                           case beforeNotice of
                             Cmd.CommandFinished result ->

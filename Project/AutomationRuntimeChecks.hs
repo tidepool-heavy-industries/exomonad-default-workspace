@@ -24,15 +24,15 @@ commandCustody = do
   started <- turn owner "inspectFull launched"
   check "both supplied command probes start with exact job handles"
     (all (`Text.isInfixOf` output started) ["ProbeRunning \"first\"", "ProbeRunning \"second\""])
-  first <- turn owner "let Right batch = launched\nfirstObserved <- observeProbe 1000 (head (startedProbes batch))\ninspectFull firstObserved"
+  first <- turn owner "let Right batch = launched\nfirstObserved <- observeProbe (Cmd.Observation 1000 0) (head (startedProbes batch))\ninspectFull firstObserved"
   check "first retained probe yields its own stdout page"
     ("ProbeObserved \"first\"" `Text.isInfixOf` output first
       && "first" `Text.isInfixOf` output first)
-  second <- turn owner "let Right batch = launched\nsecondObserved <- observeProbe 1000 (startedProbes batch !! 1)\ninspectFull secondObserved"
+  second <- turn owner "let Right batch = launched\nsecondObserved <- observeProbe (Cmd.Observation 1000 0) (startedProbes batch !! 1)\ninspectFull secondObserved"
   check "second retained probe stays independently observable"
     ("ProbeObserved \"second\"" `Text.isInfixOf` output second
       && "second" `Text.isInfixOf` output second)
-  void $ turn owner "slowJob <- Cmd.background (Cmd.withStdin (Cmd.argv [\"sh\",\"-c\",\"read line; printf done\"]))\nRight slowWatcher <- watchSlowCommand me \"owned slow probe\" slowJob 10 64 (\\_ out err -> either (const \"stdout unavailable\") Cmd.pageText out <> either (const \"stderr unavailable\") Cmd.pageText err)"
+  void $ turn owner "slowJob <- Cmd.background (Cmd.withStdin (Cmd.argv [\"sh\",\"-c\",\"read line; printf done\"]))\nRight slowWatcher <- watchSlowCommand me \"owned slow probe\" slowJob 10 64 (\\observation -> pure (either (const \"stdout unavailable\") Cmd.pageText (observedSlowStdout observation) <> either (const \"stderr unavailable\") Cmd.pageText (observedSlowStderr observation)))"
   alerted <- awaitOutput owner
     "slowState <- R.call (slowView (R.client slowWatcher)) ()\ninspectFull slowState"
     (Text.isInfixOf "slowAlert = Just")

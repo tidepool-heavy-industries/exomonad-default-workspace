@@ -177,15 +177,16 @@ startProbeBatch limits selected = case planProbeBatch limits selected of
 
 -- | Observe one exact job after retaining its launch. A running status stays
 -- running; the owner can revisit that Job without submitting another command.
--- The first page from each stream carries completeness flags. The underlying
--- Cmd.observe still fails the cell if the retained Job itself is unavailable.
+-- The first page from each stream carries completeness flags. The caller's
+-- Observation is passed through unchanged; the underlying Cmd.observe still
+-- fails the cell if the retained Job itself is unavailable.
 observeProbe
   :: Member Commands effects
-  => Int -> ProbeStart -> Eff effects ProbeObservation
-observeProbe waitMilliseconds started = case started of
+  => Cmd.Observation -> ProbeStart -> Eff effects ProbeObservation
+observeProbe observation started = case started of
   ProbeRejected name refusal -> pure (ProbeStartFailed name refusal)
   ProbeRunning name job -> do
-    state <- Cmd.quiet (Cmd.observe (Cmd.Observation (max 0 waitMilliseconds) 0) job)
+    state <- Cmd.quiet (Cmd.observe observation job)
     stdoutPage <- Cmd.tryPage job Cmd.Stdout Cmd.OutputBeginning
     stderrPage <- Cmd.tryPage job Cmd.Stderr Cmd.OutputBeginning
     pure (ProbeObserved name job state stdoutPage stderrPage)
