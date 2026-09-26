@@ -21,10 +21,11 @@ modules = [
   "Project.Service", "Project.Repository", "Project.CheckResults",
   "Project.PrepareContinue", "Project.RetainedEvidence",
   "Project.AssumptionWatch", "Project.ParallelInvestigate", "Project.SlowCommandWatch",
-  "Project.Interview",
+  "Project.Interview", "Project.WorkflowExamples",
 ]
 spec = "AgentSpec.agentSpec"
 checks = [
+  "Project.FollowupChecks.bounded",
   "Project.AutomationChecks.integration",
   "Project.CheckResultsChecks.completionRouting",
   "Project.RoutingChecks.routing",
