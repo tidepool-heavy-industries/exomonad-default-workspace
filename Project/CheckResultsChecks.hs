@@ -89,7 +89,7 @@ completionRouting = do
     "case recovered of { GateWatching _ handle -> do { state <- readChecks handle; pure (checksSummary state) }; _ -> pure \"refused\" }"
     (Text.isInfixOf "recovered: passed")
   check "reopened completed job retains its terminal evidence"
-    ("recovered: passed" `Text.isInfixOf` lastOutput recoveredResult)
+    ("recovered: passed" `Text.isInfixOf` recoveredResult)
   direct <- turn owner
     "original <- collectFocused (FocusedRun spec late)\n(focusedPassed original, Cmd.completedJob (focusedCommand original) == late, focusedPreparation original)"
   check "direct recovery reads the original completion and its preparation state"
@@ -113,7 +113,7 @@ completionRouting = do
     "partialState <- readChecks partialWatcher\nlet partialPlan = PlanStart [(\"refused\", Left (NonPositiveExpected 0)), (\"late\", Right (FocusedRun spec late))] (Just (Right partialWatcher))\nlet partialReport = PlanReport partialPlan (Just partialState)\n(planPassed partialReport, planSummary partialReport, length (checkNotices partialState))"
     (\result -> "CheckPassed" `Text.isInfixOf` result && ",1)" `Text.isInfixOf` result)
   check "partial admission keeps the passed original but refuses whole-plan acceptance"
-    (all (`Text.isInfixOf` lastOutput partial)
+    (all (`Text.isInfixOf` partial)
       ["False", "refused: start refused", "late: CheckPassed", "1"])
   void $ turn owner "finishChecks partialWatcher"
   void $ turn owner "case recovered of { GateWatching _ handle -> finishChecks handle >> pure (); _ -> pure () }"
