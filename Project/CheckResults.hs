@@ -12,7 +12,7 @@ module Project.CheckResults
   , CheckExecution (..), SourceAssurance (..), CheckOutcome (..), CheckEntry (..)
   , CheckState (..), CheckNotice (..), CheckActor (checkSnapshot)
   , watchChecks, watchChecksWithRefusals, readChecks, finishChecks, checkVerdict
-  , checkExecution, checkSourceAssurance, checksSummary
+  , checkExecution, checkSourceAssurance, checkLine, checksSummary
   ) where
 
 import Control.Monad.Freer (Eff, Member)
@@ -162,16 +162,8 @@ checkLine entry = checkName entry <> ": " <> case checkOutcome entry of
   Nothing -> "running"
   Just outcome ->
     verdictText (checkVerdict entry outcome)
-      <> "; " <> selectionText (checkFocused outcome)
-      <> "; executed " <> executionText (checkExecution entry outcome)
-      <> "; source " <> sourceText (checkSourceAssurance entry outcome)
-      <> maybe "" (" @" <>) (recordSource =<< either (const Nothing) Just (focusedEvidence (checkFocused outcome)))
-      <> "; " <> Text.pack (show (Cmd.commandOutcome (checkCompletion outcome)))
-      <> "; cleanup " <> Text.pack (show (Cmd.commandCleanup (checkCompletion outcome)))
-      <> "; preparation " <> Text.pack (show (focusedPreparation (checkFocused outcome)))
-      <> "; artifact " <> maybe "unknown" id (focusedEvidencePath (checkFocused outcome))
-      <> either ("; evidence unknown: " <>) (const "; evidence recorded")
-           (focusedEvidence (checkFocused outcome))
+      <> "; " <> focusedResultSummary (checkRun entry) (checkFocused outcome)
+      <> if matchingReceipt entry outcome then "" else "; completion receipt mismatch"
 
 checksSummary :: CheckState -> Text
 checksSummary state = "focused checks: " <> Text.intercalate "; "
@@ -186,27 +178,6 @@ checksSummaryWithRefusals refused state =
       [name <> ": start refused (" <> Text.pack (show issue) <> ")"
         | (name, issue) <- refused]
     <> "; " <> checksSummary state
-
-selectionText :: FocusedResult -> Text
-selectionText result = case focusedEvidence result of
-  Left _ -> "matched unknown, runnable unknown"
-  Right record ->
-    "matched " <> count (recordMatched record)
-      <> ", runnable " <> count (recordRunnable record)
-  where
-    count = maybe "unknown" (Text.pack . show . length)
-
-executionText :: CheckExecution -> Text
-executionText (ExecutionPassed count) = Text.pack (show count) <> " passed"
-executionText (ExecutionFailed passed failed) =
-  Text.pack (show passed) <> " passed, " <> Text.pack (show failed) <> " failed"
-executionText ExecutionUnknown = "unknown"
-
-sourceText :: SourceAssurance -> Text
-sourceText SourceVerified = "verified"
-sourceText (SourceModified _) = "dirty"
-sourceText (SourceDifferent _) = "different"
-sourceText SourceUnrecorded = "unrecorded"
 
 verdictText :: CheckVerdict -> Text
 verdictText CheckPassed = "passed"

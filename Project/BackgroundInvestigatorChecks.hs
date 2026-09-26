@@ -25,7 +25,7 @@ terminalFailure = do
     , "investigator <- watchFailedCheck me \"known failed original\" (PreparedFocusedRun spec failed) (const [probe \"first\" \"printf first\"]) (\\_ choices -> pure (Right (case choices of { [] -> Nothing; first : _ -> Just first })))"
     ]
   settled <- awaitOutput owner
-    "state <- readInvestigation investigator\n(case (investigationResult state, investigationReport state) of { (Just focused, Just report) -> (focusedPreparation focused, followupStop report, length (diagnosticObservations report), investigationSummary focused report); _ -> error \"pending\" })"
+    "state <- readInvestigation investigator\n(case (investigationResult state, investigationReport state) of { (Just focused, Just report) -> (focusedPreparation focused, followupStop report, length (diagnosticObservations report), investigationSummary (investigationRun state) focused report); _ -> error \"pending\" })"
     (Text.isInfixOf "NoProbeNeeded")
   check ("terminal failure gathers one diagnostic and retains failed preparation: " <> Text.take 320 settled)
     (all (`Text.isInfixOf` settled)
