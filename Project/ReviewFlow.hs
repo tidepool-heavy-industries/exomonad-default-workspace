@@ -3,6 +3,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MonoLocalBinds #-}
+{-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -20,21 +22,30 @@ module Project.ReviewFlow
   , ReviewStage (..)
   , ReviewStop (..)
   , ReviewChoice (..)
+  , ReviewContext (..)
+  , ReviewRouteResult (..)
+  , ReviewRouteEvidence (..)
   , ReviewSourcePlan (..)
   , ReviewFlowPolicy (..)
   , defaultReviewFlowPolicy
   , reviewFlow
+  , reviewFlowWith
+  , semanticReviewChoice
   ) where
 
 import GHC.Generics (Generic)
+import Control.Monad.Freer (Eff, Member, raise)
 import Data.List (nub)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Tidepool.Actor as Actor
 import qualified Tidepool.Actor.Record as R
 import qualified Tidepool.Command as Cmd
+import qualified Jev.Operators as J
+import Jev.Operators (Packet ((:=)), Settled (Settled))
 import Tidepool.Actors.Exomonad
-import Tidepool.Effects.Core (GitRef (..), WorktreeHandle (..))
+import Tidepool.Aeson.Value (object, (.=))
+import Tidepool.Effects.Core (GitRef (..), Jev, WorktreeHandle (..))
 import Tidepool.Actors.Worktree (boundWorktree)
 import Tidepool.Worktree (WorktreeReceipt (..), renderGitOid)
 import Project.Types
@@ -42,6 +53,28 @@ import Project.Work (candidateAtSubmission, projectPrompt, reviewContext)
 
 data ReviewChoice = HonorReview | EscalateReview Text
   deriving (Show, Eq)
+
+data ReviewContext = ReviewContext
+  { routeTask :: Task
+  , routeCandidate :: Candidate
+  , routeDecision :: ReviewDecision
+  , routeRepairCount :: Int
+  , routeRepairLimit :: Int
+  , routeEscalationCriteria :: [Text]
+  } deriving (Show)
+
+data ReviewRouteEvidence
+  = DeterministicRoute
+  | RouteCriteriaMissing
+  | JevRouteSelected Text Text Double Double Text
+  | JevRouteDoubted Text Text Double Double Text
+  | JevRouteUnavailable Text
+  deriving (Show)
+
+data ReviewRouteResult = ReviewRouteResult
+  { routeChoice :: ReviewChoice
+  , routeEvidence :: ReviewRouteEvidence
+  } deriving (Show)
 
 -- ComponentReview deliberately reviews only the submitted component. A
 -- product review declares the sibling commits that must already be in it.
@@ -53,7 +86,9 @@ data ReviewSourcePlan = ComponentReview | RequiresSiblingCommits [GitOid]
 data ReviewFlowPolicy = ReviewFlowPolicy
   { flowRepairLimit :: Int
   , flowSourcePlan :: ReviewSourcePlan
+  -- Used by reviewFlow; reviewFlowWith supplies an effectful choice instead.
   , flowReviewChoice :: Candidate -> ReviewDecision -> ReviewChoice
+  , flowEscalationCriteria :: [Text]
   , flowNotice :: ReviewStage -> Maybe Text
   }
 
@@ -62,6 +97,7 @@ defaultReviewFlowPolicy = ReviewFlowPolicy
   { flowRepairLimit = 2
   , flowSourcePlan = ComponentReview
   , flowReviewChoice = \_ _ -> HonorReview
+  , flowEscalationCriteria = []
   , flowNotice = \stage -> case stage of
       ReviewAccepted reviewed -> Just
         ("review accepted " <> renderGitOid (candidateCommit (reviewedCandidate reviewed))
@@ -69,6 +105,63 @@ defaultReviewFlowPolicy = ReviewFlowPolicy
       ReviewStopped reason -> Just ("review stopped: " <> Text.pack (show reason))
       _ -> Nothing
   }
+
+-- Jev routes only a supported Repair response. The original reviewer remains
+-- authoritative for Accepted, and an empty Repair still gets the bounded
+-- same-reviewer correction. Missing policy or uncertain judgment escalates.
+semanticReviewChoice :: Member Jev effects => ReviewContext -> Eff effects ReviewRouteResult
+semanticReviewChoice context = case routeDecision context of
+  Accepted _ -> pure (ReviewRouteResult HonorReview DeterministicRoute)
+  Repair _ [] -> pure (ReviewRouteResult HonorReview DeterministicRoute)
+  Repair _ findings
+    | null (routeEscalationCriteria context) ->
+        pure (ReviewRouteResult
+          (EscalateReview "review escalation criteria are absent")
+          RouteCriteriaMissing)
+    | otherwise -> do
+        let task = routeTask context
+        response <- J.ask
+          (J.rawState (object
+            [ "task_obligation" .= obligation task
+            , "owned_paths" .= ownedPaths task
+            , "acceptance" .= acceptance task
+            , "accepted_decisions" .= map decisionSummary (acceptedDecisions task)
+            , "candidate_commit" .= renderGitOid (candidateCommit (routeCandidate context))
+            , "candidate_checks" .= checkedCommands (routeCandidate context)
+            , "remaining_gates" .= remainingGates (routeCandidate context)
+            , "reviewer_findings" .= findings
+            , "repair_count" .= routeRepairCount context
+            , "repair_limit" .= routeRepairLimit context
+            , "escalation_criteria" .= routeEscalationCriteria context
+            ]))
+          (#route := J.choice
+            "Which route do the reviewer_findings require under the task contract and escalation_criteria?"
+            ( J.alt #repair
+                "Every finding is concrete and can be repaired within owned_paths and acceptance without changing an accepted decision or crossing an escalation criterion."
+                HonorReview
+              J..| J.alt #escalate
+                "A finding requires work outside owned_paths or acceptance, changes an accepted decision, or meets an escalation criterion."
+                (EscalateReview "review findings require an owner scope decision")
+              J..| J.alt #insufficient
+                "The findings or contract lack enough detail to determine whether repair remains within the owner's scope."
+                (EscalateReview "review findings have insufficient scope evidence") ))
+        pure $ case response of
+          Left failure ->
+            let reason = Text.pack (show failure) in ReviewRouteResult
+              (EscalateReview ("semantic review unavailable: " <> reason))
+              (JevRouteUnavailable reason)
+          Right observed ->
+            let selected = observed.route
+                model = J.resolvedModel observed
+                explanation = J.explain J.strict selected
+            in case J.takenUnder J.strict selected of
+              Left doubt -> ReviewRouteResult
+                (EscalateReview ("semantic review uncertain: " <> doubt.why))
+                (JevRouteDoubted model selected.key selected.mass
+                  selected.confidence explanation)
+              Right (Settled choice) -> ReviewRouteResult choice
+                (JevRouteSelected model selected.key selected.mass
+                  selected.confidence explanation)
 
 data ReviewStop
   = CandidateUnavailable ResponseFailure
@@ -131,6 +224,7 @@ data ReviewFlowState = ReviewFlowState
   , flowRepairRoutes :: [Forwarding (Outcome Candidate)]
   , flowNotices :: [Either NotificationError NotificationReceipt]
   , flowCleanupResult :: Maybe ReviewCleanupResult
+  , flowReviewRoutes :: [(ReviewContext, ReviewRouteResult)]
   }
 
 instance Show ReviewFlowState where
@@ -141,6 +235,7 @@ instance Show ReviewFlowState where
     ++ " repairRequests=" ++ show (length (flowRepairRequests state))
     ++ " notices=" ++ show (length (flowNotices state))
     ++ " cleanup=" ++ show (flowCleanupResult state)
+    ++ " routes=" ++ show (length (flowReviewRoutes state))
 
 data ReviewFlow mode = ReviewFlow
   { flowStateField :: mode :- State ReviewFlowState
@@ -165,8 +260,20 @@ reviewFlow
   :: AgentRef -> Task -> ReviewFlowPolicy -> Response (Outcome Candidate)
   -> ActorSpec ReviewFlow ReviewFlowEffects
 reviewFlow owner task policy implementer =
+  reviewFlowWith owner task policy implementer $ \context ->
+    pure (ReviewRouteResult
+      (flowReviewChoice policy (routeCandidate context) (routeDecision context))
+      DeterministicRoute)
+
+-- The policy receives domain facts through ordinary effects; the coordinator
+-- alone records its result and changes the flow stage.
+reviewFlowWith
+  :: AgentRef -> Task -> ReviewFlowPolicy -> Response (Outcome Candidate)
+  -> (ReviewContext -> Eff ReviewFlowEffects ReviewRouteResult)
+  -> ActorSpec ReviewFlow ReviewFlowEffects
+reviewFlowWith owner task policy implementer choose =
   R.definition "review-flow" (Actor.Selected knownEffects) ReviewFlow
-    { flowStateField = ReviewFlowState AwaitingCandidate 0 False [] [] [] [] [] [] [] [] Nothing
+    { flowStateField = ReviewFlowState AwaitingCandidate 0 False [] [] [] [] [] [] [] [] Nothing []
     , reviewSnapshot = \() -> R.get
     , reviewCleanup = \request -> do
         origin <- R.sender @ReviewFlow
@@ -265,7 +372,11 @@ reviewFlow owner task policy implementer =
 
     publish stage = do
       R.modify' (\state -> state { flowStage = stage })
-      case flowNotice policy stage of
+      let notice = case stage of
+            ReviewStopped (ReviewEscalated reason) ->
+              Just ("review escalated to owner: " <> reason)
+            _ -> flowNotice policy stage
+      case notice of
         Nothing -> pure ()
         Just message -> do
           sent <- sendMessage owner message
@@ -343,13 +454,20 @@ reviewFlow owner task policy implementer =
           Blocked reason evidence -> publish (ReviewStopped (ReviewerBlocked reason evidence))
           Produced decision -> case sourceCheck selected decision of
             Left reason -> publish (ReviewStopped reason)
-            Right () -> case flowReviewChoice policy selected decision of
-              EscalateReview reason -> publish (ReviewStopped (ReviewEscalated reason))
-              HonorReview -> case decision of
-                Accepted reviewed -> publish (ReviewAccepted reviewed)
-                Repair candidate findings
-                  | null findings -> correctReviewer own candidate
-                  | otherwise -> requestRepair own candidate findings
+            Right () -> do
+              count <- R.gets flowRepairCount
+              let context = ReviewContext task selected decision count
+                    (flowRepairLimit policy) (flowEscalationCriteria policy)
+              route <- raise (choose context)
+              R.modify' (\state -> state
+                { flowReviewRoutes = flowReviewRoutes state ++ [(context, route)] })
+              case routeChoice route of
+                EscalateReview reason -> publish (ReviewStopped (ReviewEscalated reason))
+                HonorReview -> case decision of
+                  Accepted reviewed -> publish (ReviewAccepted reviewed)
+                  Repair candidate findings
+                    | null findings -> correctReviewer own candidate
+                    | otherwise -> requestRepair own candidate findings
 
     correctReviewer own candidate = do
       used <- R.gets flowCorrectionUsed

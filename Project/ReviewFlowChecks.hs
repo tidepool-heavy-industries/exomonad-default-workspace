@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Project.ReviewFlowChecks (oneComponent, failurePaths, sourcePreflight, emptyFindings) where
+module Project.ReviewFlowChecks (oneComponent, failurePaths, sourcePreflight, emptyFindings, effectfulRouting) where
 
 import Prelude hiding (readFile, writeFile)
 import Control.Monad (void)
@@ -213,3 +213,62 @@ emptyFindings = do
       && candidate `Text.isInfixOf` stopped
       && "0,2,0)" `Text.isInfixOf` stopped)
   void $ turn owner "R.finish flow"
+
+effectfulRouting :: Member RecipeCheck effects => Eff effects ()
+effectfulRouting = do
+  owner <- root
+  baseline <- git owner ["rev-parse", "HEAD"]
+  void $ turn owner ("let sourceHead = " <> gitOidLiteral baseline
+    <> "\nlet campaignName = \"review-flow-effectful\" :: CampaignLabel"
+    <> "\nlet coordinatorName = \"review-flow-effectful-coordinator\" :: Text")
+  script owner "review-flow-effectful"
+  worker <- activation
+  candidate <- checkpoint (checkActor worker) "review-flow.txt" "routed candidate\n" "routed source"
+  void $ turn (checkActor worker)
+    ("respond (Produced (Candidate " <> gitOidLiteral candidate <> " [] []))")
+  reviewer <- activation
+  void $ turn (checkActor reviewer)
+    "let request = sessionInput :: ReviewRequest\nrespond (Produced (Repair (reviewInput request) [\"repair changes the task contract\"]))"
+  routed <- awaitOutput owner
+    "state <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (case (flowStage state, flowReviewRoutes state) of { (ReviewStopped (ReviewEscalated reason), [(_, ReviewRouteResult (EscalateReview selected) DeterministicRoute)]) -> reason == \"owner must decide this scope change\" && selected == reason && flowRepairCount state == 0; _ -> False })"
+    ("True" `Text.isInfixOf`)
+  check "effectful route escalates a valid exact-source Repair without dispatching repair"
+    (Text.strip routed == "True")
+  missing <- turn owner
+    "let selected = Candidate sourceHead [] []\nresult <- semanticReviewChoice (ReviewContext task selected (Repair selected [\"scope is unclear\"]) 0 1 [])\ninspectFull (show result)"
+  check "semantic route without escalation criteria returns typed parent escalation"
+    ("EscalateReview" `Text.isInfixOf` output missing
+      && "RouteCriteriaMissing" `Text.isInfixOf` output missing)
+  empty <- turn owner
+    "result <- semanticReviewChoice (ReviewContext task selected (Repair selected []) 0 1 [])\ninspectFull (show result)"
+  check "empty Repair stays on the bounded same-reviewer correction path"
+    ("HonorReview" `Text.isInfixOf` output empty
+      && "DeterministicRoute" `Text.isInfixOf` output empty)
+  cleanup <- turn owner
+    "receipt <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce\ninspectFull (show receipt)"
+  check "effectful escalation retains cleanup receipt after terminal review"
+    ("ReviewCleanupAttempted" `Text.isInfixOf` output cleanup)
+  void $ turn owner "R.finish flow"
+  void restart
+  owner2 <- root
+  baseline2 <- git owner2 ["rev-parse", "HEAD"]
+  void $ turn owner2 ("let sourceHead = " <> gitOidLiteral baseline2
+    <> "\nlet limit = 1 :: Int\nlet sourcePlan = ComponentReview"
+    <> "\nlet campaignName = \"review-flow-semantic\" :: CampaignLabel"
+    <> "\nlet coordinatorName = \"review-flow-semantic-coordinator\" :: Text")
+  script owner2 "review-flow-semantic"
+  worker2 <- activation
+  candidate2 <- checkpoint (checkActor worker2) "review-flow.txt" "semantic consumer\n" "semantic source"
+  void $ turn (checkActor worker2)
+    ("respond (Produced (Candidate " <> gitOidLiteral candidate2 <> " [] []))")
+  reviewer2 <- activation
+  void $ turn (checkActor reviewer2)
+    "let request = sessionInput :: ReviewRequest\nrespond (Produced (Accepted (ReviewedCandidate (reviewBasis request) (reviewInput request) [] \"checked exact source\")))"
+  accepted <- awaitOutput owner2
+    "state <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (show (flowStage state, map (routeEvidence . snd) (flowReviewRoutes state)))"
+    ("ReviewAccepted" `Text.isInfixOf`)
+  check "compiled semantic consumer preserves a reviewer's exact-source acceptance"
+    ("ReviewAccepted" `Text.isInfixOf` accepted
+      && "DeterministicRoute" `Text.isInfixOf` accepted)
+  void $ turn owner2 "R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce"
+  void $ turn owner2 "R.finish flow"
