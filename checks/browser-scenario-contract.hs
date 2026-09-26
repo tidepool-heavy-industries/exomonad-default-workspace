@@ -5,6 +5,7 @@ module Main (main) where
 import Control.Monad (unless)
 import Project.BrowserScenario
 import Project.TestEvidence (FocusedSpec (..))
+import qualified Tidepool.Command as Cmd
 
 main :: IO ()
 main = do
@@ -21,3 +22,10 @@ main = do
       && focusedFilter standalone == "standalone_missing_assets_and_clean_and_process_loss_reopen"
       && focusedExpected standalone == 1)
     (error "standalone does not select exactly the reconnect and reopen test")
+  unless (Cmd.commandArgv (Cmd.describe browserPreparationCommand)
+      == ["nix", "develop", ".#web", "-c", "bash", "-lc",
+          "cd web && npm ci && npm run check && npm test && npm run build"])
+    (error "browser preparation drifted from the required web steps")
+  unless (Cmd.commandArgv (Cmd.describe browserReadinessCommand)
+      == ["test", "-f", "web/dist/index.html"])
+    (error "browser readiness must inspect the prepared asset")
