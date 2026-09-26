@@ -11,7 +11,7 @@ module Project.CheckResults
   , NoticePolicy (..), CheckSetupIssue (..), CheckVerdict (..)
   , CheckExecution (..), SourceAssurance (..), CheckOutcome (..), CheckEntry (..)
   , CheckState (..), CheckNotice (..), CheckActor (checkSnapshot)
-  , watchChecks, readChecks, finishChecks, checkVerdict
+  , watchChecks, watchChecksWithRefusals, readChecks, finishChecks, checkVerdict
   , checkExecution, checkSourceAssurance, checksSummary
   ) where
 
@@ -78,11 +78,21 @@ watchChecks
   :: Member Actor effects
   => AgentRef -> NoticePolicy -> [(Text, FocusedRun)]
   -> Eff effects (Either CheckSetupIssue (ActorHandle CheckActor))
-watchChecks owner policy runs = case runs of
+watchChecks owner policy = watchChecksWithRefusals owner policy []
+
+-- | Include refused starts in the aggregate notice without pretending they
+-- have jobs to observe. The caller retains these typed refusals separately.
+watchChecksWithRefusals
+  :: Member Actor effects
+  => AgentRef -> NoticePolicy -> [(Text, FocusedSetupIssue)]
+  -> [(Text, FocusedRun)]
+  -> Eff effects (Either CheckSetupIssue (ActorHandle CheckActor))
+watchChecksWithRefusals owner policy refused runs = case runs of
   [] -> pure (Left NoFocusedChecks)
-  _ -> case [name | (name, _) <- runs, length (filter ((== name) . fst) runs) > 1] of
+  _ -> case [name | (name, _) <- named, length (filter ((== name) . fst) named) > 1] of
     duplicate : _ -> pure (Left (DuplicateCheckName duplicate))
-    [] -> Right <$> R.start (checkDefinition owner policy runs)
+    [] -> Right <$> R.start (checkDefinition owner policy refused runs)
+  where named = [(name, ()) | (name, _) <- refused] ++ [(name, ()) | (name, _) <- runs]
 
 readChecks :: Member Actor effects => ActorHandle CheckActor -> Eff effects CheckState
 readChecks watcher = R.call (checkSnapshot (R.client watcher)) ()
@@ -90,8 +100,8 @@ readChecks watcher = R.call (checkSnapshot (R.client watcher)) ()
 finishChecks :: Member Actor effects => ActorHandle CheckActor -> Eff effects (Actor.ActorExit CheckState)
 finishChecks = R.finish
 
-checkDefinition :: AgentRef -> NoticePolicy -> [(Text, FocusedRun)] -> ActorSpec CheckActor CheckEffects
-checkDefinition owner policy runs =
+checkDefinition :: AgentRef -> NoticePolicy -> [(Text, FocusedSetupIssue)] -> [(Text, FocusedRun)] -> ActorSpec CheckActor CheckEffects
+checkDefinition owner policy refused runs =
   R.definition "focused-check-results" (Actor.Selected knownEffects) CheckActor
       { checkState = CheckState [CheckEntry name run Nothing | (name, run) <- runs] []
       , checkSnapshot = \() -> R.get
@@ -113,7 +123,7 @@ checkDefinition owner policy runs =
           NotifyAllTerminal -> notify (Just name) (checkLine entry)
           _ -> pure ()
         if policy == NotifySummary && all (maybe False (const True) . checkOutcome) (checkEntries state)
-          then notify Nothing (checksSummary state)
+          then notify Nothing (checksSummaryWithRefusals refused state)
           else pure ()
     notify name message = do
       sent <- sendMessage owner message
@@ -166,6 +176,16 @@ checkLine entry = checkName entry <> ": " <> case checkOutcome entry of
 checksSummary :: CheckState -> Text
 checksSummary state = "focused checks: " <> Text.intercalate "; "
   [checkLine entry | entry <- checkEntries state]
+
+checksSummaryWithRefusals :: [(Text, FocusedSetupIssue)] -> CheckState -> Text
+checksSummaryWithRefusals [] state = checksSummary state
+checksSummaryWithRefusals refused state =
+  "focused checks incomplete: " <> Text.pack (show (length refused))
+    <> " requested check(s) did not start; "
+    <> Text.intercalate "; "
+      [name <> ": start refused (" <> Text.pack (show issue) <> ")"
+        | (name, issue) <- refused]
+    <> "; " <> checksSummary state
 
 selectionText :: FocusedResult -> Text
 selectionText result = case focusedEvidence result of

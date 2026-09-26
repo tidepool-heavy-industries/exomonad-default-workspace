@@ -5,7 +5,7 @@
 -- terminal facts; call 'readChecks' and 'foldGate' only when a decision needs
 -- the retained typed result.
 module Project.FocusedGateExample
-  ( GateStart (..), startGate, startPreparedGate, readGate, foldGate
+  ( GateStart (..), startGate, startPreparedGate, reopenGate, readGate, foldGate
   ) where
 
 import Control.Monad (forM_)
@@ -38,6 +38,13 @@ startPreparedGate
   => AgentRef -> Text -> Cmd.Memory -> FocusedSpec -> [Text] -> Eff effects GateStart
 startPreparedGate owner name memory spec preparation =
   startFocusedAfter memory spec preparation >>= attachGate owner name
+
+-- | Reattach to the original job after a watcher binding was lost. A retained
+-- 'FocusedRun' (or its spec, job and constructor) is required. An old watcher
+-- may still be live and send a second notice; use 'collectFocused' instead if
+-- only the original terminal result is needed. No command is submitted here.
+reopenGate :: Member Actor effects => AgentRef -> Text -> FocusedRun -> Eff effects GateStart
+reopenGate owner name run = attachGate owner name (Right run)
 
 attachGate :: Member Actor effects => AgentRef -> Text -> Either FocusedSetupIssue FocusedRun -> Eff effects GateStart
 attachGate owner name started =
