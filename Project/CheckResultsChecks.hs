@@ -86,9 +86,10 @@ completionRouting = do
   void $ turn owner "finishChecks missingWatcher"
 
   setup <- turn owner
-    "zeroJob <- Cmd.start (fixture \"zero\")\nzeroResult <- collectFocused (FocusedRun spec zeroJob)\nzeroDiagnosis <- diagnoseFocused zeroResult\nsetupJob <- Cmd.start (fixture \"setup\")\nsetupResult <- collectFocused (FocusedRun spec setupJob)\nsetupDiagnosis <- diagnoseFocused setupResult\n(diagnosisBranch zeroDiagnosis, diagnosisBranch setupDiagnosis)"
-  check "zero selection and incomplete setup take distinct deterministic branches"
-    (all (`Text.isInfixOf` lastOutput setup) ["ZeroSelection", "SetupIncomplete"])
+    "zeroJob <- Cmd.start (fixture \"zero\")\nzeroResult <- collectFocused (FocusedRun spec zeroJob)\nzeroDiagnosis <- diagnoseFocused zeroResult\nsetupJob <- Cmd.start (fixture \"setup\")\nsetupResult <- collectFocused (FocusedRun spec setupJob)\nsetupDiagnosis <- diagnoseFocused setupResult\nshortJob <- Cmd.start (fixture \"short\")\nshortResult <- collectFocused (FocusedRun spec shortJob)\nshortDiagnosis <- diagnoseFocused shortResult\n(diagnosisBranch zeroDiagnosis, diagnosisBranch setupDiagnosis, focusedExecution shortResult, diagnosisBranch shortDiagnosis)"
+  check "zero selection, incomplete setup, and short execution stay distinct"
+    ("(ZeroSelection,SetupIncomplete,ExecutionUnknown,SetupIncomplete)"
+      `Text.isInfixOf` Text.filter (/= ' ') (lastOutput setup))
 
 -- The driver must service a live command's cleanup receipt while its resident
 -- forest stops. A successful restart proves the old producer was sealed.

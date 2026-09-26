@@ -136,9 +136,11 @@ focusedExecution result
   | otherwise = case focusedEvidence result of
       Left _ -> ExecutionUnknown
       Right record -> case (recordRunnable record, recordSummaries record) of
-        (Just runnable, Just [[passed, failed, _, _, _]])
-          | length runnable == focusedExpected spec && failed > 0 -> ExecutionFailed passed failed
-          | length runnable == focusedExpected spec && passed == focusedExpected spec && failed == 0 -> ExecutionPassed passed
+        (Just runnable, Just [counts@[passed, failed, _, _, _]])
+          | length runnable == focusedExpected spec
+              && all (>= 0) counts
+              && passed + failed == focusedExpected spec ->
+                if failed == 0 then ExecutionPassed passed else ExecutionFailed passed failed
         _ -> ExecutionUnknown
   where spec = focusedSpec result
 
