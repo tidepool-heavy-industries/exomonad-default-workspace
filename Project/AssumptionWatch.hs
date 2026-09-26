@@ -60,14 +60,15 @@ data BaselineStatus
 
 -- | The projection selects the relevant observation and its fingerprint.
 -- Equal fingerprints suppress notices. A changed fingerprint updates the
--- remembered context; the callback decides whether that change needs action.
+-- remembered context; the callback sees typed before/after observations to
+-- decide whether that change needs action.
 assumptionDefinition
   :: Eq fingerprint
   => AgentRef
   -> (fingerprint, Text)
   -> R.EventSource observation
   -> (observation -> Maybe (fingerprint, Text))
-  -> (Text -> Text -> Maybe Text)
+  -> ((fingerprint, Text) -> (fingerprint, Text) -> Maybe Text)
   -> ActorSpec (AssumptionWatch fingerprint observation) (AssumptionEffects fingerprint observation)
 assumptionDefinition owner initial source project relevant =
   coordinationActor "assumption-watch" AssumptionWatch
@@ -79,7 +80,7 @@ assumptionDefinition owner initial source project relevant =
           prior <- R.gets assumptionCurrent
           if fst prior == fst current
             then R.modify' (\state -> state { assumptionCurrent = current })
-            else case relevant (snd prior) (snd current) of
+            else case relevant prior current of
               Nothing -> R.modify' (\state -> state { assumptionCurrent = current })
               Just reason -> do
                 receipt <- sendMessage owner (Text.unlines
@@ -101,7 +102,7 @@ watchAssumption
   -> (fingerprint, Text)
   -> R.EventSource observation
   -> (observation -> Maybe (fingerprint, Text))
-  -> (Text -> Text -> Maybe Text)
+  -> ((fingerprint, Text) -> (fingerprint, Text) -> Maybe Text)
   -> Eff effects (ActorHandle (AssumptionWatch fingerprint observation))
 watchAssumption owner initial source project relevant =
   R.start (assumptionDefinition owner initial source project relevant)
@@ -127,4 +128,6 @@ watchIncorporatedBaseline owner baseline pendingChild incorporation =
     project (Left failure) =
       Just (BaselineUnavailable (Text.pack (show failure)), pendingChild
         <> " incorporation failed: " <> Text.pack (show failure))
-    relevant _ _ = Just "pending child baseline changed or became unavailable"
+    relevant _ current = Just $ case fst current of
+      BaselineAt _ -> "incorporated source changed while a child is pending"
+      BaselineUnavailable _ -> "pending child incorporation became unavailable"

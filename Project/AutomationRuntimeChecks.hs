@@ -25,7 +25,7 @@ commandCustody = do
   check "second retained probe stays independently observable"
     ("ProbeObserved \"second\"" `Text.isInfixOf` output second
       && "second" `Text.isInfixOf` output second)
-  void $ turn owner "slowJob <- Cmd.background (Cmd.argv [\"sh\",\"-c\",\"sleep 0.2; printf done\"])\nslowWatcher <- watchSlowCommand me \"owned slow probe\" slowJob 10 64 (\\_ out err -> either (const \"stdout unavailable\") Cmd.pageText out <> either (const \"stderr unavailable\") Cmd.pageText err)"
+  void $ turn owner "slowJob <- Cmd.background (Cmd.argv [\"sh\",\"-c\",\"sleep 0.2; printf done\"])\nRight slowWatcher <- watchSlowCommand me \"owned slow probe\" slowJob 10 64 (\\_ out err -> either (const \"stdout unavailable\") Cmd.pageText out <> either (const \"stderr unavailable\") Cmd.pageText err)"
   void $ turn owner "Cmd.await slowJob"
   watched <- awaitOutput owner
     "slowState <- R.call (slowView (R.client slowWatcher)) ()\ninspectFull slowState"

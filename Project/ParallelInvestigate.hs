@@ -25,6 +25,7 @@ module Project.ParallelInvestigate
 
 import Control.Monad (forM)
 import Control.Monad.Freer (Eff, Member)
+import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Jev.Operators as J
@@ -99,20 +100,24 @@ selectProbes available requested = do
   forM requested $ \name -> case filter ((== name) . probeName) available of
     probe : _ -> Right probe
     [] -> Left (UnknownRequestedProbe name)
+
+firstDuplicate :: [Text] -> Maybe Text
+firstDuplicate = go Set.empty
   where
-    firstDuplicate names = case [name | name <- names, length (filter (== name) names) > 1] of
-      name : _ -> Just name
-      [] -> Nothing
+    go _ [] = Nothing
+    go seen (name : rest)
+      | name `Set.member` seen = Just name
+      | otherwise = go (Set.insert name seen) rest
 
 -- | Select the exact active batch before any command starts. Probes beyond
 -- the total selection budget remain separate from selected but unrun probes.
-planProbeBatch :: ProbeLimits -> [CommandProbe] -> [Text] -> Either ProbeRefusal ProbePlan
-planProbeBatch limits available requested
+planProbeBatch :: ProbeLimits -> [CommandProbe] -> Either ProbeRefusal ProbePlan
+planProbeBatch limits selected
   | maximumSelected limits <= 0 || maximumConcurrent limits <= 0 =
       Left (InvalidProbeLimits limits)
-  | otherwise = case selectProbes available requested of
-      Left refusal -> Left refusal
-      Right selected ->
+  | otherwise = case firstDuplicate (map probeName selected) of
+      Just name -> Left (DuplicateAvailableProbe name)
+      Nothing ->
         let admitted = take (maximumSelected limits) selected
             active = take (maximumConcurrent limits) admitted
             unrun = map probeName (drop (length active) admitted)
@@ -122,31 +127,40 @@ planProbeBatch limits available requested
           Nothing -> Right (ProbePlan active unrun outside)
   where
     firstInvalid [] = Nothing
-    firstInvalid (probe : rest)
-      | not ("/" `Text.isPrefixOf` probeDirectory probe) =
-          Just (InvalidProbeDirectory (probeName probe))
-      | not (validMemory (probeMemory probe)) =
-          Just (InvalidProbeMemory (probeName probe))
-      | otherwise = firstInvalid rest
+    firstInvalid (probe : rest) = case validateProbe probe of
+      Just refusal -> Just refusal
+      Nothing -> firstInvalid rest
+
+validateProbe :: CommandProbe -> Maybe ProbeRefusal
+validateProbe probe
+  | not ("/" `Text.isPrefixOf` probeDirectory probe) =
+      Just (InvalidProbeDirectory (probeName probe))
+  | not (validMemory (probeMemory probe)) =
+      Just (InvalidProbeMemory (probeName probe))
+  | otherwise = Nothing
+  where
     validMemory (Cmd.MiB amount) = amount > 0 && amount <= maxBound `div` (1024 * 1024)
     validMemory (Cmd.GiB amount) = amount > 0 && amount <= maxBound `div` (1024 * 1024 * 1024)
+
+startValidProbe :: Member Commands effects => CommandProbe -> Eff effects ProbeStart
+startValidProbe probe = do
+  started <- Cmd.tryStart
+    (Cmd.withMemory (probeMemory probe)
+      (Cmd.inDirectory (probeDirectory probe) (probeCommand probe)))
+  pure $ case started of
+    Left refusal -> ProbeRejected (probeName probe) refusal
+    Right job -> ProbeRunning (probeName probe) job
 
 -- | Start at most `maximumConcurrent` jobs. Observe the exact returned handles
 -- before starting a continuation; a pending result remains a running job.
 startProbeBatch
   :: Member Commands effects
-  => ProbeLimits -> [CommandProbe] -> [Text]
+  => ProbeLimits -> [CommandProbe]
   -> Eff effects (Either ProbeRefusal ProbeLaunch)
-startProbeBatch limits available requested = case planProbeBatch limits available requested of
+startProbeBatch limits selected = case planProbeBatch limits selected of
   Left refusal -> pure (Left refusal)
   Right plan -> do
-    launched <- forM (plannedStart plan) $ \probe -> do
-      started <- Cmd.tryStart
-        (Cmd.withMemory (probeMemory probe)
-          (Cmd.inDirectory (probeDirectory probe) (probeCommand probe)))
-      pure $ case started of
-        Left refusal -> ProbeRejected (probeName probe) refusal
-        Right job -> ProbeRunning (probeName probe) job
+    launched <- forM (plannedStart plan) startValidProbe
     pure (Right (ProbeLaunch launched (plannedUnrun plan) (plannedOutsideBudget plan)))
 
 -- | Observe one exact job after retaining its launch. A running status stays

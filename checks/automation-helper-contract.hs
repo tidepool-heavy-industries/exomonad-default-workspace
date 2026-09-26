@@ -11,7 +11,7 @@ import Project.ParallelInvestigate
 import Project.Types (Incorporation)
 import Tidepool.Actors.Exomonad (Actor, AgentRef, GitOid, Response)
 import qualified Tidepool.Command as Cmd
-import Tidepool.Effects.Core (Commands)
+import Tidepool.Effects.Core (Commands, Jev)
 
 -- A parent can retain the pending child's baseline while starting two exact,
 -- read-only command probes in its own checkout. The returned launch retains
@@ -27,13 +27,26 @@ pendingChildExample owner baseline incorporation checkout = do
         (Cmd.argv ["git", "status", "--short"])
     , CommandProbe "head" "current commit" checkout (Cmd.MiB 128)
         (Cmd.argv ["git", "rev-parse", "HEAD"])
-    ] ["status", "head"]
+    ]
   pure result
 
 -- Run in a later cell after binding the launch, so an unavailable job cannot
 -- discard another already-started job handle.
 observeOneExample :: Member Commands effects => ProbeStart -> Eff effects ProbeObservation
 observeOneExample = observeProbe 0
+
+-- Semantic selection carries the caller's typed command and budget directly
+-- into execution; there is no second name lookup or synthesized command.
+chosenProbeExample
+  :: (Member Jev effects, Member Commands effects)
+  => Text -> [CommandProbe]
+  -> Eff effects (Either ProbeChoiceFailure (Maybe (Either ProbeRefusal ProbeLaunch)))
+chosenProbeExample question probes = do
+  chosen <- chooseNextProbe question probes
+  case chosen of
+    Left issue -> pure (Left issue)
+    Right Nothing -> pure (Right Nothing)
+    Right (Just probe) -> Right . Just <$> startProbeBatch (ProbeLimits 1 1) [probe]
 
 assert :: String -> Bool -> IO ()
 assert label passed = unless passed (error label)
@@ -56,20 +69,20 @@ main = do
       Left (UnknownRequestedProbe "missing") -> True
       _ -> False)
   assert "cap active and total selected probes separately"
-    (case planProbeBatch (ProbeLimits 2 1) available ["one", "two", "three"] of
+    (case planProbeBatch (ProbeLimits 2 1) available of
       Right plan -> names plan == ["one"] && plannedUnrun plan == ["two"]
         && plannedOutsideBudget plan == ["three"]
       _ -> False)
   assert "refuse implicit working directory"
-    (case planProbeBatch (ProbeLimits 1 1) [(probe "one") { probeDirectory = "relative" }] ["one"] of
+    (case planProbeBatch (ProbeLimits 1 1) [(probe "one") { probeDirectory = "relative" }] of
       Left (InvalidProbeDirectory "one") -> True
       _ -> False)
   assert "refuse invalid memory before starting"
-    (case planProbeBatch (ProbeLimits 1 1) [(probe "one") { probeMemory = Cmd.MiB 0 }] ["one"] of
+    (case planProbeBatch (ProbeLimits 1 1) [(probe "one") { probeMemory = Cmd.MiB 0 }] of
       Left (InvalidProbeMemory "one") -> True
       _ -> False)
   assert "refuse invalid selected but deferred probe before starting any job"
     (case planProbeBatch (ProbeLimits 2 1)
-      [probe "one", (probe "two") { probeMemory = Cmd.MiB 0 }] ["one", "two"] of
+      [probe "one", (probe "two") { probeMemory = Cmd.MiB 0 }] of
       Left (InvalidProbeMemory "two") -> True
       _ -> False)

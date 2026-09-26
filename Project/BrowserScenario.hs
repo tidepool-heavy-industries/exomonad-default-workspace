@@ -28,8 +28,9 @@ browserPreparationCommand = Cmd.argv
   , "cd web && npm ci && npm run check && npm test && npm run build"
   ]
 
--- | A second read in the same checkout after preparation. Its completed
--- result is evidence for the prepared asset required by the production tests.
+-- | A second read in the same checkout after successful preparation. Its
+-- completed result confirms an asset exists; it is not a freshness witness
+-- and never authorizes skipping the preparation command.
 browserReadinessCommand :: Cmd.Command
 browserReadinessCommand = Cmd.argv ["test", "-f", "web/dist/index.html"]
 

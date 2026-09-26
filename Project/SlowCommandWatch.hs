@@ -11,6 +11,7 @@ module Project.SlowCommandWatch
   ( SlowCommandWatch (slowView)
   , SlowState (..)
   , SlowAlert (..)
+  , SlowWatchIssue (..)
   , watchSlowCommand
   ) where
 
@@ -31,6 +32,12 @@ data SlowAlert = SlowAlert
   , alertReceipt :: Either NotificationError NotificationReceipt
   } deriving (Show)
 
+data SlowWatchIssue
+  = NegativeObservationThreshold Int
+  | ObservationThresholdTooLong Int
+  | InvalidDiagnosticCharacters Int
+  deriving (Show, Eq)
+
 data SlowState = SlowState
   { slowJob :: Cmd.Job
   , slowChecked :: Bool
@@ -49,10 +56,11 @@ type SlowEffects = R.LocalEffects SlowCommandWatch '[Commands, Notifications, Ac
 
 -- | The caller owns the supplied Job and supplies a pure diagnostic renderer.
 -- The renderer sees one typed page per stream, including loss and completeness
--- fields; its notice is capped at `diagnosticCharacters` (at most 8192).
+-- fields; its notice uses `diagnosticCharacters` (at most 8192). Invalid
+-- policy is refused before the actor starts.
 -- This actor sends one actionable notice if the job is still running
--- after a wait of up to `thresholdMilliseconds` since this actor attaches
--- (capped at 30 seconds), then records any later completion. It does not
+-- after a wait of `thresholdMilliseconds` since this actor attaches
+-- (at most 30 seconds), then records any later completion. It does not
 -- infer how long the job ran before attachment or start, cancel or retry it.
 watchSlowCommand
   :: Member Actor effects
@@ -65,52 +73,55 @@ watchSlowCommand
       -> Either Cmd.CommandError Cmd.OutputPage
       -> Either Cmd.CommandError Cmd.OutputPage
       -> Text)
-  -> Eff effects (ActorHandle SlowCommandWatch)
-watchSlowCommand owner context job thresholdMilliseconds diagnosticCharacters render = do
-  let threshold = max 0 (min 30000 thresholdMilliseconds)
-      specification :: ActorSpec SlowCommandWatch SlowEffects
-      specification = R.definition "slow-command-watch" (Actor.Selected knownEffects)
-        SlowCommandWatch
-        { slowState = SlowState job False Nothing Nothing
-      , slowView = \() -> R.get
-      , slowCheck = \() -> do
-          current <- R.get
-          if slowChecked current
-            then pure ()
-            else do
-              R.modify' (\state -> state { slowChecked = True })
-              observed <- Cmd.quiet $ Cmd.observe
-                (Cmd.Observation threshold 0) job
-              case observed of
-                Cmd.CommandFinished result ->
-                  R.modify' (\state -> state { slowCompletion = Just result })
-                _ -> do
-                  latest <- Cmd.quiet $ Cmd.observe (Cmd.Observation 0 0) job
-                  case latest of
+  -> Eff effects (Either SlowWatchIssue (ActorHandle SlowCommandWatch))
+watchSlowCommand owner context job thresholdMilliseconds diagnosticCharacters render
+  | thresholdMilliseconds < 0 = pure (Left (NegativeObservationThreshold thresholdMilliseconds))
+  | thresholdMilliseconds > 30000 = pure (Left (ObservationThresholdTooLong thresholdMilliseconds))
+  | diagnosticCharacters < 0 || diagnosticCharacters > 8192 =
+      pure (Left (InvalidDiagnosticCharacters diagnosticCharacters))
+  | otherwise = do
+    let specification :: ActorSpec SlowCommandWatch SlowEffects
+        specification = R.definition "slow-command-watch" (Actor.Selected knownEffects)
+          SlowCommandWatch
+          { slowState = SlowState job False Nothing Nothing
+          , slowView = \() -> R.get
+          , slowCheck = \() -> do
+              current <- R.get
+              if slowChecked current
+                then pure ()
+                else do
+                  R.modify' (\state -> state { slowChecked = True })
+                  observed <- Cmd.quiet $ Cmd.observe
+                    (Cmd.Observation thresholdMilliseconds 0) job
+                  case observed of
                     Cmd.CommandFinished result ->
                       R.modify' (\state -> state { slowCompletion = Just result })
                     _ -> do
-                      stdoutPage <- Cmd.tryPage job Cmd.Stdout Cmd.OutputBeginning
-                      stderrPage <- Cmd.tryPage job Cmd.Stderr Cmd.OutputBeginning
-                      let chars = max 0 (min 8192 diagnosticCharacters)
-                          diagnostic = Text.take chars $ render latest
-                            stdoutPage stderrPage
-                      beforeNotice <- Cmd.quiet $ Cmd.observe (Cmd.Observation 0 0) job
-                      case beforeNotice of
+                      latest <- Cmd.quiet $ Cmd.observe (Cmd.Observation 0 0) job
+                      case latest of
                         Cmd.CommandFinished result ->
                           R.modify' (\state -> state { slowCompletion = Just result })
                         _ -> do
-                          receipt <- sendMessage owner $ Text.unlines
-                            [ "Slow command: " <> context
-                            , "Status after " <> Text.pack (show threshold)
-                                <> " ms: " <> Text.pack (show beforeNotice)
-                            , diagnostic
-                            ]
-                          R.modify' (\state -> state
-                            { slowAlert = Just (SlowAlert beforeNotice diagnostic receipt) })
-      , slowCompleted = R.on (Cmd.completion job) $ \result ->
-          R.modify' (\state -> state { slowCompletion = Just result })
-        }
-  actor <- R.start specification
-  R.send (slowCheck (R.client actor)) ()
-  pure actor
+                          stdoutPage <- Cmd.tryPage job Cmd.Stdout Cmd.OutputBeginning
+                          stderrPage <- Cmd.tryPage job Cmd.Stderr Cmd.OutputBeginning
+                          let diagnostic = Text.take diagnosticCharacters $ render latest
+                                stdoutPage stderrPage
+                          beforeNotice <- Cmd.quiet $ Cmd.observe (Cmd.Observation 0 0) job
+                          case beforeNotice of
+                            Cmd.CommandFinished result ->
+                              R.modify' (\state -> state { slowCompletion = Just result })
+                            _ -> do
+                              receipt <- sendMessage owner $ Text.unlines
+                                [ "Slow command: " <> context
+                                , "Status after " <> Text.pack (show thresholdMilliseconds)
+                                    <> " ms: " <> Text.pack (show beforeNotice)
+                                , diagnostic
+                                ]
+                              R.modify' (\state -> state
+                                { slowAlert = Just (SlowAlert beforeNotice diagnostic receipt) })
+          , slowCompleted = R.on (Cmd.completion job) $ \result ->
+              R.modify' (\state -> state { slowCompletion = Just result })
+          }
+    actor <- R.start specification
+    R.send (slowCheck (R.client actor)) ()
+    pure (Right actor)

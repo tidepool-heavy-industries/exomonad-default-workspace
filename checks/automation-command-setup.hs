@@ -8,4 +8,4 @@ let commandProbes =
       , CommandProbe "second" "second read" "/tmp" (Cmd.MiB 64)
           (Cmd.argv ["sh", "-c", "printf second"])
       ]
-launched <- startProbeBatch (ProbeLimits 2 2) commandProbes ["first", "second"]
+launched <- startProbeBatch (ProbeLimits 2 2) commandProbes
