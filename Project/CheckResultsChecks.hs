@@ -53,7 +53,9 @@ completionRouting = do
   check "assertion failure diagnosis retains a bounded output excerpt"
     (all (`Text.isInfixOf` lastOutput productFailure) ["AssertionsFailed 0 1", "fixture diagnostic"])
   notices <- turn owner "length . checkNotices <$> readChecks watcher"
-  check "problem policy sends only failed and unknown notices" (output notices == "2")
+  -- The offline driver refuses delivery. These prove attempted, retained
+  -- notifications and policy selection, not successful inbox delivery.
+  check "problem policy records only failed and unknown notice attempts" (output notices == "2")
   void $ turn owner "finishChecks watcher"
 
   void $ turn owner
@@ -61,7 +63,7 @@ completionRouting = do
   summary <- awaitOutput owner
     "view <- readChecks summarizer\nif length (checkNotices view) == 1 then checksSummary view else \"pending\""
     (Text.isInfixOf "late passed")
-  check "aggregate policy sends one named summary after late completions"
+  check "aggregate policy records one named summary attempt after late completions"
     (all (`Text.isInfixOf` summary) ["late passed", "failed failed"])
   void $ turn owner "finishChecks summarizer"
 
