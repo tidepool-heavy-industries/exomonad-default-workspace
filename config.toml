@@ -53,6 +53,7 @@ checks = [
   "Project.ReviewFlowChecks.oneComponent",
   "Project.ReviewFlowChecks.failurePaths",
   "Project.ReviewFlowChecks.effectfulRouting",
+  "Project.ReviewFlowChecks.workflowExample",
 ]
 
 # jev-dsl is compiled from the revision `flake.nix` pins, not from a copy in
