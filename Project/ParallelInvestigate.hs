@@ -234,7 +234,10 @@ data FollowupReport = FollowupReport
   } deriving (Show)
 
 -- | At most two contextual, caller-supplied read-only diagnostics after a
--- terminal failure. Use from a completion handler or a notebook; this never
+-- terminal failure. Use from a completion handler or after a terminal observation;
+-- a pending original is returned unchanged for the caller's existing completion
+-- route. Observation works with shared jobs and never arms another owner's notice.
+-- This never
 -- retries the original command. Cancellation, unconfirmed exit, or retained
 -- cleanup stop before diagnostics. Commands keep their supplied authority/budget.
 followFailure
@@ -251,7 +254,7 @@ followFailureWith
   -> Text -> Cmd.Job -> [CommandProbe]
   -> Eff effects FollowupReport
 followFailureWith choose intent original available = do
-  state <- Cmd.quiet (Cmd.observeCompletion (Cmd.Observation 0 0) original)
+  state <- Cmd.quiet (Cmd.observe (Cmd.Observation 0 0) original)
   out <- Cmd.tryPage original Cmd.Stdout (Cmd.OutputSlice 0 4096)
   err <- Cmd.tryPage original Cmd.Stderr (Cmd.OutputSlice 0 4096)
   let initial = ProbeObserved "original" original state out err
