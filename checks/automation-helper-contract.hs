@@ -19,7 +19,7 @@ import Tidepool.Effects.Core (Commands)
 pendingChildExample
   :: (Member Actor effects, Member Commands effects)
   => AgentRef -> GitOid -> Response Incorporation -> Text
-  -> Eff effects (Either ProbeRefusal (ProbeLaunch, [ProbeObservation]))
+  -> Eff effects (Either ProbeRefusal ProbeLaunch)
 pendingChildExample owner baseline incorporation checkout = do
   void (watchIncorporatedBaseline owner baseline "pending child" incorporation)
   result <- startProbeBatch (ProbeLimits 2 2)
@@ -28,11 +28,12 @@ pendingChildExample owner baseline incorporation checkout = do
     , CommandProbe "head" "current commit" checkout (Cmd.MiB 128)
         (Cmd.argv ["git", "rev-parse", "HEAD"])
     ] ["status", "head"]
-  case result of
-    Left refusal -> pure (Left refusal)
-    Right launch -> do
-      observations <- observeProbeBatch 0 launch
-      pure (Right (launch, observations))
+  pure result
+
+-- Run in a later cell after binding the launch, so an unavailable job cannot
+-- discard another already-started job handle.
+observeOneExample :: Member Commands effects => ProbeStart -> Eff effects ProbeObservation
+observeOneExample = observeProbe 0
 
 assert :: String -> Bool -> IO ()
 assert label passed = unless passed (error label)

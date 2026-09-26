@@ -19,7 +19,7 @@ module Project.ParallelInvestigate
   , selectProbes
   , planProbeBatch
   , startProbeBatch
-  , observeProbeBatch
+  , observeProbe
   , chooseNextProbe
   ) where
 
@@ -149,21 +149,20 @@ startProbeBatch limits available requested = case planProbeBatch limits availabl
         Right job -> ProbeRunning (probeName probe) job
     pure (Right (ProbeLaunch launched (plannedUnrun plan) (plannedOutsideBudget plan)))
 
--- | A bounded observation of each exact job. A running status stays running;
--- the owner retains the Job and can revisit it without submitting another
--- command. The first page from each stream is evidence, including its
--- completeness flags; neither is presented as complete output here.
-observeProbeBatch
+-- | Observe one exact job after retaining its launch. A running status stays
+-- running; the owner can revisit that Job without submitting another command.
+-- The first page from each stream carries completeness flags. The underlying
+-- Cmd.observe still fails the cell if the retained Job itself is unavailable.
+observeProbe
   :: Member Commands effects
-  => Int -> ProbeLaunch -> Eff effects [ProbeObservation]
-observeProbeBatch waitMilliseconds launch = forM (startedProbes launch) $ \started ->
-  case started of
-    ProbeRejected name refusal -> pure (ProbeStartFailed name refusal)
-    ProbeRunning name job -> do
-      state <- Cmd.quiet (Cmd.observe (Cmd.Observation (max 0 waitMilliseconds) 0) job)
-      stdoutPage <- Cmd.tryPage job Cmd.Stdout Cmd.OutputBeginning
-      stderrPage <- Cmd.tryPage job Cmd.Stderr Cmd.OutputBeginning
-      pure (ProbeObserved name job state stdoutPage stderrPage)
+  => Int -> ProbeStart -> Eff effects ProbeObservation
+observeProbe waitMilliseconds started = case started of
+  ProbeRejected name refusal -> pure (ProbeStartFailed name refusal)
+  ProbeRunning name job -> do
+    state <- Cmd.quiet (Cmd.observe (Cmd.Observation (max 0 waitMilliseconds) 0) job)
+    stdoutPage <- Cmd.tryPage job Cmd.Stdout Cmd.OutputBeginning
+    stderrPage <- Cmd.tryPage job Cmd.Stderr Cmd.OutputBeginning
+    pure (ProbeObserved name job state stdoutPage stderrPage)
 
 -- | Optional semantic navigation among the supplied typed probes. A near
 -- tie or unavailable Jev response returns unresolved evidence; it never

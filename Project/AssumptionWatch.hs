@@ -12,6 +12,7 @@ module Project.AssumptionWatch
   ( AssumptionWatch (assumptionView)
   , AssumptionState (..)
   , AssumptionChange (..)
+  , BaselineStatus (..)
   , assumptionDefinition
   , watchAssumption
   , watchIncorporatedBaseline
@@ -51,6 +52,11 @@ data AssumptionWatch fingerprint observation mode = AssumptionWatch
 
 type AssumptionEffects fingerprint observation =
   CoordinationEffects (AssumptionWatch fingerprint observation)
+
+data BaselineStatus
+  = BaselineAt GitOid
+  | BaselineUnavailable Text
+  deriving (Show, Eq)
 
 -- | The projection selects the relevant observation and its fingerprint.
 -- Equal fingerprints suppress notices. A changed fingerprint updates the
@@ -102,18 +108,23 @@ watchAssumption owner initial source project relevant =
 
 -- | A pending child's submitted baseline is a concrete first consumer. The
 -- caller supplies the exact incorporation response and the child context;
--- only a successful source advance asks its owner to revisit that child.
+-- a successful source advance or unavailable incorporation asks its owner to
+-- revisit that child. Unavailable and unchanged remain distinct states.
 watchIncorporatedBaseline
   :: Member Actor effects
   => AgentRef -> GitOid -> Text -> Response Incorporation
-  -> Eff effects (ActorHandle (AssumptionWatch GitOid (Either ResponseFailure (ResponseResult Incorporation))))
+  -> Eff effects (ActorHandle (AssumptionWatch BaselineStatus (Either ResponseFailure (ResponseResult Incorporation))))
 watchIncorporatedBaseline owner baseline pendingChild incorporation =
-  watchAssumption owner (baseline, pendingChild <> " at " <> renderGitOid baseline)
+  watchAssumption owner (BaselineAt baseline, pendingChild <> " at " <> renderGitOid baseline)
     (R.settlement incorporation) project relevant
   where
     project (Right result) = case responseValue result of
       Incorporated _ headOid _ ->
-        Just (headOid, pendingChild <> " at " <> renderGitOid headOid)
-      IncorporationBlocked _ _ _ -> Nothing
-    project (Left _) = Nothing
-    relevant _ _ = Just "incorporated source changed while a child is pending"
+        Just (BaselineAt headOid, pendingChild <> " at " <> renderGitOid headOid)
+      IncorporationBlocked _ reason evidence ->
+        Just (BaselineUnavailable reason, pendingChild <> " blocked: "
+          <> reason <> "; evidence: " <> Text.intercalate ", " evidence)
+    project (Left failure) =
+      Just (BaselineUnavailable (Text.pack (show failure)), pendingChild
+        <> " incorporation failed: " <> Text.pack (show failure))
+    relevant _ _ = Just "pending child baseline changed or became unavailable"
