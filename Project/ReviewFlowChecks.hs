@@ -73,9 +73,9 @@ oneComponent = do
       && revised `Text.isInfixOf` accepted
       && "1,3,1" `Text.isInfixOf` accepted)
   script owner "review-flow-cleanup"
-  cleanup <- turn owner "case cleanup of { ReviewCleanupAttempted groups -> inspectFull (length groups, map (length . snd) groups, map (map cleanupReceiptComplete . snd) groups); _ -> inspectFull (-1 :: Int, [] :: [Int], [] :: [[Bool]]) }"
+  cleanup <- turn owner "case cleanup of { ReviewCleanupAttempted groups -> inspectFull (length groups == 2 && map (length . snd) groups == [1,1]); _ -> inspectFull False }"
   check "coordinator records cleanup of both distinct reviewer groups"
-    ("(2,[1,1]" `Text.isInfixOf` output cleanup)
+    (lastOutput cleanup == "True")
   repeated <- turn owner "again <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce\nstate <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (show again == show cleanup && show (flowCleanupResult state) == show (Just cleanup))"
   check "repeat and snapshot retain original cleanup outcomes"
     (lastOutput repeated == "True")
