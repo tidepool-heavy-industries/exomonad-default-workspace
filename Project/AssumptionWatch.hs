@@ -5,12 +5,16 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
--- | Watch an existing source for a change to one caller-selected assumption.
--- The source owner retains its ordering and lifetime; this actor remembers the
--- latest observation and the last actionable change, without polling.
+-- | Observe typed changes and apply a caller's policy without a model turn.
+-- Event sources own ordering and lifetime. This actor retains the latest value
+-- and decision; it neither polls nor retries an unresolved judgment.
 module Project.AssumptionWatch
   ( AssumptionWatch (assumptionView)
+  , AssumptionEffects
+  , Change (..)
+  , ChangeDecision (..)
   , AssumptionState (..)
+  , assumptionLastChange
   , AssumptionChange (..)
   , BaselineStatus (..)
   , assumptionDefinition
@@ -18,7 +22,8 @@ module Project.AssumptionWatch
   , watchIncorporatedBaseline
   ) where
 
-import Control.Monad.Freer (Eff, Member)
+import Control.Monad.Freer (Eff, Member, raise)
+import Data.Maybe (listToMaybe)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import GHC.Generics (Generic)
@@ -30,112 +35,134 @@ import Tidepool.Effects.Row (knownEffects)
 import Tidepool.Worktree (renderGitOid)
 import Project.Types (Incorporation (..))
 
-data AssumptionChange fingerprint = AssumptionChange
-  { beforeFingerprint :: fingerprint
-  , afterFingerprint :: fingerprint
-  , beforeContext :: Text
-  , afterContext :: Text
-  , changeReason :: Text
-  , changeNotice :: Either NotificationError NotificationReceipt
+-- | The policy receives domain values, not their rendered descriptions.
+data Change value = Change
+  { changeBefore :: value
+  , changeAfter :: value
+  } deriving (Show, Eq)
+
+-- | Reasons remain inspectable even when no notification is needed.
+-- Unresolved judgments notify the owner; they never silently mean irrelevant.
+data ChangeDecision
+  = IgnoreChange Text
+  | ReportChange Text
+  | UnresolvedChange Text
+  deriving (Show, Eq)
+
+data AssumptionChange value = AssumptionChange
+  { assumptionChange :: Change value
+  , changeDecision :: ChangeDecision
+  , changeNotice :: Maybe (Either NotificationError NotificationReceipt)
   }
 
-data AssumptionState fingerprint = AssumptionState
-  { assumptionCurrent :: (fingerprint, Text)
-  , assumptionLastChange :: Maybe (AssumptionChange fingerprint)
+instance Show value => Show (AssumptionChange value) where
+  show observed = "AssumptionChange " ++ show (assumptionChange observed)
+    ++ " " ++ show (changeDecision observed)
+    ++ " notice=" ++ case changeNotice observed of
+      Nothing -> "none"
+      Just (Left refusal) -> show refusal
+      Just (Right _) -> "admitted"
+
+data AssumptionState value = AssumptionState
+  { assumptionCurrent :: value
+  , assumptionRecentChanges :: [AssumptionChange value]
   , assumptionChangeCount :: Int
   }
 
-data AssumptionWatch fingerprint observation mode = AssumptionWatch
-  { assumptionState :: mode :- State (AssumptionState fingerprint)
-  , assumptionView :: mode :- Call () (R.Reply (AssumptionState fingerprint))
+-- Newest first, bounded to 32 decisions. The count includes evicted decisions;
+-- an ignored later event does not immediately erase the preceding alert.
+assumptionLastChange :: AssumptionState value -> Maybe (AssumptionChange value)
+assumptionLastChange = listToMaybe . assumptionRecentChanges
+
+-- Full before/after values and exact receipts remain in assumptionRecentChanges.
+instance Show value => Show (AssumptionState value) where
+  show state = "AssumptionState current=" ++ show (assumptionCurrent state)
+    ++ " changes=" ++ show (assumptionChangeCount state)
+    ++ " lastDecision=" ++ show (changeDecision <$> assumptionLastChange state)
+
+data AssumptionWatch value observation mode = AssumptionWatch
+  { assumptionState :: mode :- State (AssumptionState value)
+  , assumptionView :: mode :- Call () (R.Reply (AssumptionState value))
   , assumptionEvents :: mode :- Event observation
   } deriving Generic
 
-type AssumptionEffects fingerprint observation =
-  R.LocalEffects (AssumptionWatch fingerprint observation) '[Replies, Actor, Notifications, Jev]
-
-type AssumptionHandler fingerprint observation =
-  R.Handler (AssumptionState fingerprint) (AssumptionEffects fingerprint observation)
+type AssumptionEffects value observation =
+  LocalEffects (AssumptionWatch value observation) '[Replies, Actor, Notifications, Jev]
 
 data BaselineStatus
   = BaselineAt GitOid
   | BaselineUnavailable Text
   deriving (Show, Eq)
 
--- | The projection selects the relevant observation and its fingerprint.
--- Equal fingerprints suppress notices. A changed fingerprint updates the
--- remembered context; the callback sees typed before/after observations to
--- decide whether that change needs action.
+-- | Project an event onto the domain value that matters. Nothing ignores an
+-- event; equal values skip the policy entirely. A changed value runs the policy
+-- once, which can use Jev. Lift a deterministic policy with @pure . decide@.
+--
+-- The callback's ordinary effect result contains the decision; it does not need
+-- access to the watcher's private state. Supply enough context in a report for
+-- its recipient to act. Full typed before/after values remain in the snapshot.
 assumptionDefinition
-  :: Eq fingerprint
+  :: Eq value
   => AgentRef
-  -> (fingerprint, Text)
+  -> value
   -> R.EventSource observation
-  -> (observation -> Maybe (fingerprint, Text))
-  -> ((fingerprint, Text) -> (fingerprint, Text)
-      -> AssumptionHandler fingerprint observation (Maybe Text))
-  -> ActorSpec (AssumptionWatch fingerprint observation) (AssumptionEffects fingerprint observation)
-assumptionDefinition owner initial source project relevant =
+  -> (observation -> Maybe value)
+  -> (Change value -> Eff (AssumptionEffects value observation) ChangeDecision)
+  -> ActorSpec (AssumptionWatch value observation) (AssumptionEffects value observation)
+assumptionDefinition owner initial source project decide =
   R.definition "assumption-watch" (Actor.Selected knownEffects) AssumptionWatch
-    { assumptionState = AssumptionState initial Nothing 0
+    { assumptionState = AssumptionState initial [] 0
     , assumptionView = \() -> R.get
     , assumptionEvents = R.on source $ \observation -> case project observation of
         Nothing -> pure ()
         Just current -> do
           prior <- R.gets assumptionCurrent
-          if fst prior == fst current
-            then R.modify' (\state -> state { assumptionCurrent = current })
-            else do
-              decision <- relevant prior current
-              case decision of
-                Nothing -> R.modify' (\state -> state { assumptionCurrent = current })
-                Just reason -> do
-                  receipt <- sendMessage owner (Text.unlines
-                    [ "Assumption changed: " <> reason
-                    , "Before: " <> snd prior
-                    , "After: " <> snd current
-                    ])
-                  R.modify' $ \state -> state
-                    { assumptionCurrent = current
-                    , assumptionLastChange = Just (AssumptionChange
-                        (fst prior) (fst current) (snd prior) (snd current) reason receipt)
-                    , assumptionChangeCount = assumptionChangeCount state + 1
-                    }
+          if prior == current then pure () else do
+            let change = Change prior current
+            decision <- raise (decide change)
+            receipt <- case decision of
+              IgnoreChange _ -> pure Nothing
+              ReportChange message -> Just <$> sendMessage owner message
+              UnresolvedChange reason -> Just <$> sendMessage owner
+                ("Assumption judgment unresolved: " <> reason)
+            R.modify' $ \state -> state
+              { assumptionCurrent = current
+              , assumptionRecentChanges = take 32
+                  (AssumptionChange change decision receipt : assumptionRecentChanges state)
+              , assumptionChangeCount = assumptionChangeCount state + 1
+              }
     }
 
 watchAssumption
-  :: (Eq fingerprint, Member Actor effects)
+  :: (Eq value, Member Actor effects)
   => AgentRef
-  -> (fingerprint, Text)
+  -> value
   -> R.EventSource observation
-  -> (observation -> Maybe (fingerprint, Text))
-  -> ((fingerprint, Text) -> (fingerprint, Text)
-      -> AssumptionHandler fingerprint observation (Maybe Text))
-  -> Eff effects (ActorHandle (AssumptionWatch fingerprint observation))
-watchAssumption owner initial source project relevant =
-  R.start (assumptionDefinition owner initial source project relevant)
+  -> (observation -> Maybe value)
+  -> (Change value -> Eff (AssumptionEffects value observation) ChangeDecision)
+  -> Eff effects (ActorHandle (AssumptionWatch value observation))
+watchAssumption owner initial source project decide =
+  R.start (assumptionDefinition owner initial source project decide)
 
--- | A pending child's submitted baseline is a concrete first consumer. The
--- caller supplies the exact incorporation response and the child context;
--- a successful source advance or unavailable incorporation asks its owner to
--- revisit that child. Unavailable and unchanged remain distinct states.
+-- | A pending child's source advance is a deterministic specialization of the
+-- same watcher. The exact incorporation response remains the source of truth.
 watchIncorporatedBaseline
   :: Member Actor effects
   => AgentRef -> GitOid -> Text -> Response Incorporation
   -> Eff effects (ActorHandle (AssumptionWatch BaselineStatus (Either ResponseFailure (ResponseResult Incorporation))))
 watchIncorporatedBaseline owner baseline pendingChild incorporation =
-  watchAssumption owner (BaselineAt baseline, pendingChild <> " at " <> renderGitOid baseline)
-    (R.settlement incorporation) project relevant
+  watchAssumption owner (BaselineAt baseline)
+    (R.settlement incorporation) project (pure . decide)
   where
-    project (Right result) = case responseValue result of
-      Incorporated _ headOid _ ->
-        Just (BaselineAt headOid, pendingChild <> " at " <> renderGitOid headOid)
-      IncorporationBlocked _ reason evidence ->
-        Just (BaselineUnavailable reason, pendingChild <> " blocked: "
-          <> reason <> "; evidence: " <> Text.intercalate ", " evidence)
-    project (Left failure) =
-      Just (BaselineUnavailable (Text.pack (show failure)), pendingChild
-        <> " incorporation failed: " <> Text.pack (show failure))
-    relevant _ current = pure $ Just $ case fst current of
-      BaselineAt _ -> "incorporated source changed while a child is pending"
-      BaselineUnavailable _ -> "pending child incorporation became unavailable"
+    project (Right result) = Just $ case responseValue result of
+      Incorporated _ headOid _ -> BaselineAt headOid
+      IncorporationBlocked _ reason evidence -> BaselineUnavailable
+        (reason <> "; evidence: " <> Text.intercalate ", " evidence)
+    project (Left failure) = Just (BaselineUnavailable (Text.pack (show failure)))
+    describe (BaselineAt oid) = renderGitOid oid
+    describe (BaselineUnavailable reason) = "unavailable: " <> reason
+    decide change = ReportChange $ Text.unlines
+      [ "Revisit " <> pendingChild <> ": its incorporated source changed."
+      , "Before: " <> describe (changeBefore change)
+      , "After: " <> describe (changeAfter change)
+      ]
