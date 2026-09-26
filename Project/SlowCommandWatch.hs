@@ -92,14 +92,19 @@ watchSlowCommand owner context job thresholdMilliseconds diagnosticCharacters re
                           excerpt = Text.take chars . either (Text.pack . show) Cmd.pageText
                           diagnostic = Text.take 8192 $ render latest
                             (excerpt stdoutPage) (excerpt stderrPage)
-                      receipt <- sendMessage owner $ Text.unlines
-                        [ "Slow command: " <> context
-                        , "Status after " <> Text.pack (show threshold)
-                            <> " ms: " <> Text.pack (show latest)
-                        , diagnostic
-                        ]
-                      R.modify' (\state -> state
-                        { slowAlert = Just (SlowAlert latest diagnostic receipt) })
+                      beforeNotice <- Cmd.quiet $ Cmd.observe (Cmd.Observation 0 0) job
+                      case beforeNotice of
+                        Cmd.CommandFinished result ->
+                          R.modify' (\state -> state { slowCompletion = Just result })
+                        _ -> do
+                          receipt <- sendMessage owner $ Text.unlines
+                            [ "Slow command: " <> context
+                            , "Status after " <> Text.pack (show threshold)
+                                <> " ms: " <> Text.pack (show beforeNotice)
+                            , diagnostic
+                            ]
+                          R.modify' (\state -> state
+                            { slowAlert = Just (SlowAlert beforeNotice diagnostic receipt) })
       , slowCompleted = R.on (Cmd.completion job) $ \result ->
           R.modify' (\state -> state { slowCompletion = Just result })
         }
