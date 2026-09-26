@@ -5,35 +5,38 @@ module Project.BackgroundInvestigatorChecks (terminalFailure, pendingProbe) wher
 
 import Control.Monad (void)
 import Control.Monad.Freer (Eff, Member)
+import Data.Char (isAlphaNum)
 import qualified Data.Text as Text
 import Tidepool.Check
 
 terminalFailure :: Member RecipeCheck effects => Eff effects ()
 terminalFailure = do
   owner <- root
+  directory <- Text.strip <$> git owner ["rev-parse", "--show-toplevel"]
   void $ turn owner $ Text.unlines
     [ "import Project.BackgroundInvestigator"
     , "import Project.ParallelInvestigate"
+    , "let directory = " <> literal directory
     , "let spec = FocusedSpec \"investigate fixture\" \"fixture-source\" \"fixture-package\" \"lib\" \"fixture::one\" 1"
-    , "let probe name command = CommandProbe name name \"/tmp\" (Cmd.MiB 64) (Cmd.argv [\"sh\", \"-c\", command])"
+    , "let probe name command = CommandProbe name name directory (Cmd.MiB 64) (Cmd.argv [\"sh\", \"-c\", command])"
     , "let choose _ choices = pure (Right (case choices of { [] -> Nothing; first : _ -> Just first }))"
     , "failed <- Cmd.start (Cmd.withMemory (Cmd.MiB 64) (Cmd.argv [\"sh\", \"-c\", \"exit 7\"]))"
     , "Cmd.await failed"
-    , "investigator <- watchFailedCheck me \"known failed original\" (PreparedFocusedRun spec failed) (const [probe \"first\" \"printf first\"]) choose"
+    , "investigator <- watchFailedCheck me \"known failed original\" (PreparedFocusedRun spec failed) (const [probe \"first\" \"printf first\"]) (\\_ choices -> pure (Right (case choices of { [] -> Nothing; first : _ -> Just first })))"
     ]
   settled <- awaitOutput owner
     "state <- readInvestigation investigator\n(case (investigationResult state, investigationReport state) of { (Just focused, Just report) -> (focusedPreparation focused, followupStop report, length (diagnosticObservations report), investigationSummary focused report); _ -> error \"pending\" })"
     (Text.isInfixOf "NoProbeNeeded")
   check ("terminal failure gathers one diagnostic and retains failed preparation: " <> Text.take 320 settled)
     (all (`Text.isInfixOf` settled)
-      ["PreparationUnknown", "NoProbeNeeded", "first", "check not accepted", "CommandExited 7"])
+      ["PreparationUnknown", "NoProbeNeeded", "first", "check not accepted", "CommandExited 7", "CommandExited 0"])
   finish <- turn owner "finishInvestigation investigator"
   check "completed investigation releases its report owner"
     ("Right" `Text.isInfixOf` lastOutput finish)
   void $ turn owner $ Text.unlines
     [ "succeeded <- Cmd.start (Cmd.withMemory (Cmd.MiB 64) (Cmd.argv [\"true\"]))"
     , "Cmd.await succeeded"
-    , "successWatcher <- watchFailedCheck me \"already successful command\" (FocusedRun spec succeeded) (const [probe \"unrun\" \"printf never\"]) choose"
+    , "successWatcher <- watchFailedCheck me \"already successful command\" (FocusedRun spec succeeded) (const [probe \"unrun\" \"printf never\"]) (\\_ choices -> pure (Right (case choices of { [] -> Nothing; first : _ -> Just first })))"
     ]
   success <- awaitOutput owner
     "state <- readInvestigation successWatcher\nfmap followupStop (investigationReport state)"
@@ -41,7 +44,7 @@ terminalFailure = do
   check "successful original skips probes" ("OriginalNotFailed" `Text.isInfixOf` success)
   void $ turn owner "finishInvestigation successWatcher"
   void $ turn owner
-    "invalidWatcher <- watchFailedCheck me \"invalid probes\" (FocusedRun spec failed) (const [probe \"same\" \"printf one\", probe \"same\" \"printf two\"]) choose"
+    "invalidWatcher <- watchFailedCheck me \"invalid probes\" (FocusedRun spec failed) (const [probe \"same\" \"printf one\", probe \"same\" \"printf two\"]) (\\_ choices -> pure (Right (case choices of { [] -> Nothing; first : _ -> Just first })))"
   invalid <- awaitOutput owner
     "state <- readInvestigation invalidWatcher\nfmap followupStop (investigationReport state)"
     (Text.isInfixOf "InvalidFollowupProbes")
@@ -49,7 +52,7 @@ terminalFailure = do
     ("DuplicateAvailableProbe" `Text.isInfixOf` invalid)
   void $ turn owner "finishInvestigation invalidWatcher"
   void $ turn owner
-    "cancelled <- Cmd.start (Cmd.withMemory (Cmd.MiB 64) (Cmd.argv [\"sleep\", \"30\"]))\nCmd.cancel cancelled\nCmd.await cancelled\ncancelWatcher <- watchFailedCheck me \"cancelled original\" (PreparedFocusedRun spec cancelled) (const [probe \"unrun\" \"printf never\"]) choose"
+    "cancelled <- Cmd.start (Cmd.withMemory (Cmd.MiB 64) (Cmd.argv [\"sleep\", \"30\"]))\nCmd.cancel cancelled\nCmd.await cancelled\ncancelWatcher <- watchFailedCheck me \"cancelled original\" (PreparedFocusedRun spec cancelled) (const [probe \"unrun\" \"printf never\"]) (\\_ choices -> pure (Right (case choices of { [] -> Nothing; first : _ -> Just first })))"
   cancelledResult <- awaitOutput owner
     "state <- readInvestigation cancelWatcher\nfmap followupStop (investigationReport state)"
     (Text.isInfixOf "OriginalNotDiagnosable")
@@ -60,15 +63,21 @@ terminalFailure = do
 pendingProbe :: Member RecipeCheck effects => Eff effects ()
 pendingProbe = do
   owner <- root
+  directory <- Text.strip <$> git owner ["rev-parse", "--show-toplevel"]
+  let barrier = "/tmp/tidepool-investigation-" <> Text.filter isAlphaNum (Text.pack (show owner))
   void $ turn owner $ Text.unlines
     [ "import Project.BackgroundInvestigator"
     , "import Project.ParallelInvestigate"
+    , "let directory = " <> literal directory
+    , "let barrier = " <> literal barrier
     , "let spec = FocusedSpec \"pending fixture\" \"fixture-source\" \"fixture-package\" \"lib\" \"fixture::one\" 1"
-    , "let probe name command = CommandProbe name name \"/tmp\" (Cmd.MiB 64) (Cmd.argv [\"sh\", \"-c\", command])"
+    , "let probe name command = CommandProbe name name directory (Cmd.MiB 64) command"
     , "let choose _ choices = pure (Right (case choices of { [] -> Nothing; first : _ -> Just first }))"
+    , "barrierJob <- Cmd.start (Cmd.withMemory (Cmd.MiB 64) (Cmd.argv [\"mkfifo\", barrier]))"
+    , "Cmd.await barrierJob"
     , "failed <- Cmd.start (Cmd.withMemory (Cmd.MiB 64) (Cmd.argv [\"sh\", \"-c\", \"exit 9\"]))"
     , "Cmd.await failed"
-    , "investigator <- watchFailedCheck me \"pending diagnostic\" (FocusedRun spec failed) (const [probe \"slow\" \"sleep 45; printf done\", probe \"second\" \"printf second\"]) choose"
+    , "investigator <- watchFailedCheck me \"pending diagnostic\" (FocusedRun spec failed) (const [probe \"waiting\" (Cmd.argv [\"sh\", \"-c\", \"read token < \\\"$1\\\"; printf done\", \"sh\", barrier]), probe \"second\" (Cmd.argv [\"printf\", \"second\"]), probe \"third\" (Cmd.argv [\"printf\", \"never\"])]) (\\_ choices -> pure (Right (case choices of { [] -> Nothing; first : _ -> Just first })))"
     ]
   pending <- awaitOutput owner
     "state <- readInvestigation investigator\nfmap followupStop (investigationReport state)"
@@ -81,6 +90,8 @@ pendingProbe = do
     "state <- readInvestigation investigator\nlet Just report = investigationReport state\nlet FollowupStillRunning pendingJob = followupStop report\ninvalid <- resumeFollowupWith choose \"pending diagnostic\" pendingJob (investigationAvailable state) report\nfollowupStop invalid"
   check "recovery refuses a different original handle without probe submission"
     ("FollowupRecoveryMismatch" `Text.isInfixOf` lastOutput wrong)
+  void $ turn owner
+    "release <- Cmd.start (Cmd.withMemory (Cmd.MiB 64) (Cmd.argv [\"sh\", \"-c\", \"printf 'release\\n' > \\\"$1\\\"\", \"sh\", barrier]))\nCmd.await release"
   finished <- awaitOutput owner
     "state <- readInvestigation investigator\n(fmap followupStop (investigationReport state), fmap (length . diagnosticObservations) (investigationReport state), length (investigationFollowers state))"
     (Text.isInfixOf "FollowupBudgetSpent")
@@ -89,3 +100,5 @@ pendingProbe = do
   finish <- turn owner "finishInvestigation investigator"
   check "follower and report owner retire after terminal diagnosis"
     ("Right" `Text.isInfixOf` lastOutput finish)
+  void $ turn owner
+    "removed <- Cmd.start (Cmd.withMemory (Cmd.MiB 64) (Cmd.argv [\"rm\", \"--\", barrier]))\nCmd.await removed"

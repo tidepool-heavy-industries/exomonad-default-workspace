@@ -354,7 +354,7 @@ continueFollowup choose intent initial observed remaining budget
               ProbeRejected name issue ->
                 pure (FollowupReport initial observed (FollowupStartRefused name issue))
               ProbeRunning name job -> do
-                state <- Cmd.quiet (Cmd.observeCompletion (Cmd.Observation 30000 0) job)
+                state <- Cmd.quiet (Cmd.observe (Cmd.Observation 30000 0) job)
                 out <- Cmd.tryPage job Cmd.Stdout (Cmd.OutputSlice 0 4096)
                 err <- Cmd.tryPage job Cmd.Stderr (Cmd.OutputSlice 0 4096)
                 let next = observed ++ [ProbeObserved name job state out err]
