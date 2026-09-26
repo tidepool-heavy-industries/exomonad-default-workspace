@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Project.ReviewFlowChecks (oneComponent, failurePaths, sourcePreflight, emptyFindings) where
+module Project.ReviewFlowChecks (oneComponent, failurePaths, sourcePreflight, emptyFindings, effectfulRouting) where
 
 import Prelude hiding (readFile, writeFile)
 import Control.Monad (void)
@@ -19,6 +19,9 @@ oneComponent = do
     <> "\nlet coordinatorName = \"review-flow-coordinator-first\" :: Text"
     <> "\nlet sourcePlan = RequiresSiblingCommits [sourceHead]")
   script owner "review-flow-loop"
+  pending <- turn owner "cleanup <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce\ninspectFull (show cleanup)"
+  check "cleanup refuses while the candidate is pending"
+    ("ReviewCleanupPending AwaitingCandidate" `Text.isInfixOf` output pending)
   implementer <- activation
   first <- checkpoint (checkActor implementer) "review-flow.txt" "first candidate\n" "initial candidate"
   void $ turn (checkActor implementer)
@@ -31,6 +34,12 @@ oneComponent = do
     ("ReviewingCandidate" `Text.isInfixOf` firstState)
   headSeen <- git (checkActor reviewer) ["rev-parse", "HEAD"]
   check "first review starts fresh at the submitted candidate" (headSeen == first)
+  pendingReview <- turn owner "cleanup <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce\ninspectFull (show cleanup)"
+  check "cleanup refuses with a live reviewer"
+    ("ReviewCleanupPending (ReviewingCandidate" `Text.isInfixOf` output pendingReview)
+  firstInterview <- turn (checkActor reviewer) "let cleanupInterview = \"initial reviewer found a component issue\" :: Text\ncleanupInterview"
+  check "first reviewer interview is available before cleanup"
+    ("initial reviewer found a component issue" `Text.isInfixOf` output firstInterview)
   void $ turn (checkActor reviewer)
     "let request = sessionInput :: ReviewRequest\nrespond (Produced (Repair (reviewInput request) []))"
   correction <- activation
@@ -41,6 +50,9 @@ oneComponent = do
   repairWorker <- activation
   check "repair returns directly to the retained implementer"
     (checkActor repairWorker == checkActor implementer)
+  pendingRepair <- turn owner "cleanup <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce\ninspectFull (show cleanup)"
+  check "cleanup refuses while repair is pending"
+    ("ReviewCleanupPending (AwaitingRepair" `Text.isInfixOf` output pendingRepair)
   revised <- checkpoint (checkActor repairWorker) "review-flow.txt" "repaired candidate\n" "repair candidate"
   void $ turn (checkActor repairWorker)
     ("respond (Produced (Candidate " <> gitOidLiteral revised <> " [] [\"owner integration\"]))")
@@ -48,6 +60,9 @@ oneComponent = do
   secondHead <- git (checkActor second) ["rev-parse", "HEAD"]
   check "revised source gets a new exact-source reviewer"
     (checkActor second /= checkActor reviewer && secondHead == revised)
+  interview <- turn (checkActor second) "let cleanupInterview = \"reviewer checked the repaired source\" :: Text\ncleanupInterview"
+  check "reviewer interview is retained before cleanup"
+    ("reviewer checked the repaired source" `Text.isInfixOf` output interview)
   void $ turn (checkActor second)
     "let request = sessionInput :: ReviewRequest\nrespond (Produced (Accepted (ReviewedCandidate (reviewBasis request) (reviewInput request) [\"read exact source\"] \"accepted\")))"
   accepted <- awaitOutput owner
@@ -57,6 +72,16 @@ oneComponent = do
     ("ReviewAccepted" `Text.isInfixOf` accepted
       && revised `Text.isInfixOf` accepted
       && "1,3,1" `Text.isInfixOf` accepted)
+  script owner "review-flow-cleanup"
+  cleanup <- turn owner "case cleanup of { ReviewCleanupAttempted groups -> inspectFull (length groups == 2 && map (length . snd) groups == [1,1]); _ -> inspectFull False }"
+  check "coordinator records cleanup of both distinct reviewer groups"
+    (lastOutput cleanup == "True")
+  repeated <- turn owner "again <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce\nstate <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (show again == show cleanup && show (flowCleanupResult state) == show (Just cleanup))"
+  check "repeat and snapshot retain original cleanup outcomes"
+    (lastOutput repeated == "True")
+  retry <- turn owner "retry <- R.call (reviewCleanup (R.client flow)) ReviewCleanupRetryRefused\nlet refused receipts = case reverse receipts of { latest:_ -> case cleanupReceiptSteps latest of { [CleanupBlocked _] -> True; [CleanupStalePlan] -> True; _ -> False }; [] -> True }\ncase (cleanup, retry) of { (ReviewCleanupAttempted before, ReviewCleanupAttempted after) -> inspectFull (length before == length after && and [length new == length old + (if refused old then 1 else 0) | ((_,old),(_,new)) <- zip before after]); _ -> inspectFull False }"
+  check "explicit retry only reruns previously refused groups"
+    (lastOutput retry == "True")
   void $ turn owner "R.finish flow"
 
 failurePaths :: Member RecipeCheck effects => Eff effects ()
@@ -81,6 +106,9 @@ failurePaths = do
   check "zero repair budget stops without dispatching another request"
     ("RepairBudgetSpent" `Text.isInfixOf` budget
       && "0,0)" `Text.isInfixOf` budget)
+  budgetCleanup <- turn owner2 "receipt <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce\ninspectFull (case receipt of { ReviewCleanupAttempted groups -> (length groups, map (map cleanupReceiptComplete . snd) groups); _ -> (0 :: Int, []) })"
+  check "stopped review still retains its reviewer cleanup receipt"
+    ("(1," `Text.isInfixOf` output budgetCleanup)
   void $ turn owner2 "R.finish flow"
   void restart
   owner3 <- root
@@ -102,6 +130,9 @@ failurePaths = do
       && base3 `Text.isInfixOf` stopped
       && actual `Text.isInfixOf` stopped
       && ",0)" `Text.isInfixOf` stopped)
+  none <- turn owner3 "cleanup <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce\ninspectFull (show cleanup)"
+  check "terminal flow without a reviewer has no reviewer group to clean"
+    ("ReviewCleanupNoReviewer" `Text.isInfixOf` output none)
   void $ turn owner3 "R.finish flow"
 
 sourcePreflight :: Member RecipeCheck effects => Eff effects ()
@@ -182,3 +213,66 @@ emptyFindings = do
       && candidate `Text.isInfixOf` stopped
       && "0,2,0)" `Text.isInfixOf` stopped)
   void $ turn owner "R.finish flow"
+
+effectfulRouting :: Member RecipeCheck effects => Eff effects ()
+effectfulRouting = do
+  owner <- root
+  baseline <- git owner ["rev-parse", "HEAD"]
+  void $ turn owner ("let sourceHead = " <> gitOidLiteral baseline
+    <> "\nlet campaignName = \"review-flow-effectful\" :: CampaignLabel"
+    <> "\nlet coordinatorName = \"review-flow-effectful-coordinator\" :: Text")
+  script owner "review-flow-effectful"
+  worker <- activation
+  candidate <- checkpoint (checkActor worker) "review-flow.txt" "routed candidate\n" "routed source"
+  void $ turn (checkActor worker)
+    ("respond (Produced (Candidate " <> gitOidLiteral candidate <> " [] []))")
+  reviewer <- activation
+  void $ turn (checkActor reviewer)
+    "let request = sessionInput :: ReviewRequest\nrespond (Produced (Repair (reviewInput request) [\"repair changes the task contract\"]))"
+  routed <- awaitOutput owner
+    "state <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (case (flowStage state, flowReviewRoutes state) of { (ReviewStopped (ReviewEscalated reason), [(_, ReviewRouteResult (EscalateReview selected) DeterministicRoute)]) -> reason == \"owner must decide this scope change\" && selected == reason && flowRepairCount state == 0; _ -> False })"
+    ("True" `Text.isInfixOf`)
+  check "effectful route escalates a valid exact-source Repair without dispatching repair"
+    ("True" `Text.isInfixOf` routed)
+  notice <- turn owner
+    "state <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (length (flowNotices state))"
+  check "owner receives one escalation notice"
+    (lastOutput notice == "1")
+  missing <- turn owner
+    "let selected = Candidate sourceHead [] []\nresult <- semanticReviewChoice (ReviewContext task selected (Repair selected [\"scope is unclear\"]) 0 1 [])\ninspectFull (show result)"
+  check "semantic route without escalation criteria returns typed parent escalation"
+    ("EscalateReview" `Text.isInfixOf` output missing
+      && "RouteCriteriaMissing" `Text.isInfixOf` output missing)
+  empty <- turn owner
+    "result <- semanticReviewChoice (ReviewContext task selected (Repair selected []) 0 1 [])\ninspectFull (show result)"
+  check "empty Repair stays on the bounded same-reviewer correction path"
+    ("HonorReview" `Text.isInfixOf` output empty
+      && "DeterministicRoute" `Text.isInfixOf` output empty)
+  cleanup <- turn owner
+    "receipt <- R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce\ninspectFull (show receipt)"
+  check "effectful escalation retains cleanup receipt after terminal review"
+    ("ReviewCleanupAttempted" `Text.isInfixOf` output cleanup)
+  void $ turn owner "R.finish flow"
+  void restart
+  owner2 <- root
+  baseline2 <- git owner2 ["rev-parse", "HEAD"]
+  void $ turn owner2 ("let sourceHead = " <> gitOidLiteral baseline2
+    <> "\nlet limit = 1 :: Int\nlet sourcePlan = ComponentReview"
+    <> "\nlet campaignName = \"review-flow-semantic\" :: CampaignLabel"
+    <> "\nlet coordinatorName = \"review-flow-semantic-coordinator\" :: Text")
+  script owner2 "review-flow-semantic"
+  worker2 <- activation
+  candidate2 <- checkpoint (checkActor worker2) "review-flow.txt" "semantic consumer\n" "semantic source"
+  void $ turn (checkActor worker2)
+    ("respond (Produced (Candidate " <> gitOidLiteral candidate2 <> " [] []))")
+  reviewer2 <- activation
+  void $ turn (checkActor reviewer2)
+    "let request = sessionInput :: ReviewRequest\nrespond (Produced (Accepted (ReviewedCandidate (reviewBasis request) (reviewInput request) [] \"checked exact source\")))"
+  accepted <- awaitOutput owner2
+    "state <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (show (flowStage state, map (routeEvidence . snd) (flowReviewRoutes state)))"
+    ("ReviewAccepted" `Text.isInfixOf`)
+  check "compiled semantic consumer preserves a reviewer's exact-source acceptance"
+    ("ReviewAccepted" `Text.isInfixOf` accepted
+      && "DeterministicRoute" `Text.isInfixOf` accepted)
+  void $ turn owner2 "R.call (reviewCleanup (R.client flow)) ReviewCleanupOnce"
+  void $ turn owner2 "R.finish flow"
