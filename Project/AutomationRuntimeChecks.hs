@@ -27,8 +27,10 @@ commandCustody = do
       && "second" `Text.isInfixOf` output second)
   void $ turn owner "slowJob <- Cmd.background (Cmd.argv [\"sh\",\"-c\",\"sleep 0.2; printf done\"])\nslowWatcher <- watchSlowCommand me \"owned slow probe\" slowJob 10 64 (\\_ out err -> out <> err)"
   void $ turn owner "Cmd.await slowJob"
-  watched <- turn owner "slowState <- R.call (slowView (R.client slowWatcher)) ()\ninspectFull slowState"
+  watched <- awaitOutput owner
+    "slowState <- R.call (slowView (R.client slowWatcher)) ()\ninspectFull slowState"
+    (Text.isInfixOf "slowCompletion = Just")
   check "record actor observes the parent's shared job and retains one alert"
-    ("slowChecked = True" `Text.isInfixOf` output watched
-      && "slowAlert = Just" `Text.isInfixOf` output watched
-      && "slowCompletion = Just" `Text.isInfixOf` output watched)
+    ("slowChecked = True" `Text.isInfixOf` watched
+      && "slowAlert = Just" `Text.isInfixOf` watched
+      && "slowCompletion = Just" `Text.isInfixOf` watched)
