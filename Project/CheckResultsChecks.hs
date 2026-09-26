@@ -123,7 +123,7 @@ evidenceProbe spec =
     { probeState = ()
     , probeStart = \() -> FocusedRun spec <$> Cmd.start
         (Cmd.withMemory (Cmd.MiB 64)
-          (Cmd.argv ["bash", "checks/focused-result-fixture.sh", "pass"]))
+          (Cmd.argv ["bash", "checks/focused-result-fixture.sh", "pass", "managed"]))
     , probeRead = \path -> do
         started <- Cmd.tryStart (Cmd.withMemory (Cmd.MiB 64) (Cmd.argv ["cat", path]))
         case started of
@@ -152,7 +152,7 @@ managedEvidence = do
     "view <- readChecks managedWatcher\n[fmap (checkVerdict e) (checkOutcome e) | e <- checkEntries view]"
     (Text.isInfixOf "Just Check")
   verified <- turn owner
-    "view <- readChecks managedWatcher\n(checksSummary view, [(checkName e, fmap (focusedEvidence . checkFocused) (checkOutcome e), fmap checkCompletion (checkOutcome e)) | e <- checkEntries view])"
+    "view <- readChecks managedWatcher\n(checksSummary view, [(checkName e, fmap (Cmd.stderr . focusedCommand . checkFocused) (checkOutcome e), fmap (focusedEvidence . checkFocused) (checkOutcome e), fmap checkCompletion (checkOutcome e)) | e <- checkEntries view])"
   let observed = lastOutput verified
   check ("watcher reports selected and executed facts from the original managed job: "
       <> Text.take 1200 observed)
