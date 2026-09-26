@@ -18,10 +18,11 @@ modules = [
   "Project.Investigate", "Project.Merge", "Project.Review", "Project.Search", "Project.History",
   "Project.FieldNotes", "Project.RebaseRouter", "Project.SupervisionProfiles",
   "Project.FieldNotesChecks", "Project.RebaseRouterChecks",
-  "Project.Service", "Project.Repository",
+  "Project.Service", "Project.Repository", "Project.CheckResults",
 ]
 spec = "AgentSpec.agentSpec"
 checks = [
+  "Project.CheckResultsChecks.completionRouting",
   "Project.RoutingChecks.routing",
   "Project.RoutingChecks.candidateHistory",
   "Project.RoutingChecks.notificationRetention",
