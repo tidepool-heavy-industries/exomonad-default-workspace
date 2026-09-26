@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | Remix this session seed for the current component. Keep evidence parsing
 -- and acceptance rules in the shared owner; specialize commands and policy here.
