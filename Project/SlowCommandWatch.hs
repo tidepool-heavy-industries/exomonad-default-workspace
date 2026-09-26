@@ -48,8 +48,9 @@ data SlowCommandWatch mode = SlowCommandWatch
 type SlowEffects = R.LocalEffects SlowCommandWatch '[Commands, Notifications, Actor]
 
 -- | The caller owns the supplied Job and supplies a pure diagnostic renderer.
--- The renderer sees at most `diagnosticCharacters` from each retained first
--- page. This actor sends one actionable notice if the job is still running
+-- The renderer sees one typed page per stream, including loss and completeness
+-- fields; its notice is capped at `diagnosticCharacters` (at most 8192).
+-- This actor sends one actionable notice if the job is still running
 -- after a wait of up to `thresholdMilliseconds` since this actor attaches
 -- (capped at 30 seconds), then records any later completion. It does not
 -- infer how long the job ran before attachment or start, cancel or retry it.
@@ -60,7 +61,10 @@ watchSlowCommand
   -> Cmd.Job
   -> Int
   -> Int
-  -> (Cmd.CommandStatus -> Text -> Text -> Text)
+  -> (Cmd.CommandStatus
+      -> Either Cmd.CommandError Cmd.OutputPage
+      -> Either Cmd.CommandError Cmd.OutputPage
+      -> Text)
   -> Eff effects (ActorHandle SlowCommandWatch)
 watchSlowCommand owner context job thresholdMilliseconds diagnosticCharacters render = do
   let threshold = max 0 (min 30000 thresholdMilliseconds)
@@ -88,10 +92,9 @@ watchSlowCommand owner context job thresholdMilliseconds diagnosticCharacters re
                     _ -> do
                       stdoutPage <- Cmd.tryPage job Cmd.Stdout Cmd.OutputBeginning
                       stderrPage <- Cmd.tryPage job Cmd.Stderr Cmd.OutputBeginning
-                      let chars = max 0 (min 4096 diagnosticCharacters)
-                          excerpt = Text.take chars . either (Text.pack . show) Cmd.pageText
-                          diagnostic = Text.take 8192 $ render latest
-                            (excerpt stdoutPage) (excerpt stderrPage)
+                      let chars = max 0 (min 8192 diagnosticCharacters)
+                          diagnostic = Text.take chars $ render latest
+                            stdoutPage stderrPage
                       beforeNotice <- Cmd.quiet $ Cmd.observe (Cmd.Observation 0 0) job
                       case beforeNotice of
                         Cmd.CommandFinished result ->

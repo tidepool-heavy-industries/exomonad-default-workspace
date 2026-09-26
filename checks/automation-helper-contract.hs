@@ -68,3 +68,8 @@ main = do
     (case planProbeBatch (ProbeLimits 1 1) [(probe "one") { probeMemory = Cmd.MiB 0 }] ["one"] of
       Left (InvalidProbeMemory "one") -> True
       _ -> False)
+  assert "refuse invalid selected but deferred probe before starting any job"
+    (case planProbeBatch (ProbeLimits 2 1)
+      [probe "one", (probe "two") { probeMemory = Cmd.MiB 0 }] ["one", "two"] of
+      Left (InvalidProbeMemory "two") -> True
+      _ -> False)

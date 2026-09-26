@@ -117,7 +117,7 @@ planProbeBatch limits available requested
             active = take (maximumConcurrent limits) admitted
             unrun = map probeName (drop (length active) admitted)
             outside = map probeName (drop (length admitted) selected)
-        in case firstInvalid active of
+        in case firstInvalid admitted of
           Just refusal -> Left refusal
           Nothing -> Right (ProbePlan active unrun outside)
   where
