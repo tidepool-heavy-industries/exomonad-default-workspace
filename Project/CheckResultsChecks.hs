@@ -54,8 +54,8 @@ completionRouting = do
     "failed <- Cmd.start (fixture \"fail\")\nunknown <- Cmd.start (fixture \"unknown\")\nRight watcher <- watchChecks me NotifyProblems [(\"late\", FocusedRun spec late), (\"failed\", FocusedRun spec failed), (\"unknown\", FocusedRun spec unknown)]"
   observed <- awaitOutput owner
     "view <- readChecks watcher\nmap (\\entry -> fmap (checkVerdict entry) (checkOutcome entry)) (checkEntries view)"
-    (Text.isInfixOf "Just CheckUnknown")
-  check "late completion, failed exit and missing evidence all settle"
+    (\text -> "Just CheckUnknown" `Text.isInfixOf` text && not ("Nothing" `Text.isInfixOf` text))
+  check ("late completion, failed exit and missing evidence all settle: " <> observed)
     (all (`Text.isInfixOf` observed) ["Just CheckPassed", "Just CheckFailed", "Just CheckUnknown"])
   details <- turn owner
     "view <- readChecks watcher\n[(checkName e, fmap (Cmd.commandCleanup . checkCompletion) (checkOutcome e), fmap (focusedEvidence . checkFocused) (checkOutcome e)) | e <- checkEntries view]"
@@ -91,7 +91,7 @@ completionRouting = do
     "dirtyView <- readChecks dirtyWatcher\nchecksSummary dirtyView"
     (Text.isInfixOf "source dirty")
   check "executed pass remains visible when source assurance is dirty"
-    (all (`Text.isInfixOf` dirty) ["dirty unknown", "executed 1 passed", "source dirty"])
+    (all (`Text.isInfixOf` dirty) ["dirty: unknown", "executed 1 passed", "source dirty"])
   void $ turn owner "finishChecks dirtyWatcher"
 
   void $ turn owner
