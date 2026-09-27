@@ -12,6 +12,7 @@ module Project.EvidencePatternExamples
   , EvidencePacket
   , commandEvidence, reviewEvidence
   , commandCriteria, reviewCriteria
+  , commandState, reviewState
   , commandPacket, reviewPacket
   , runCommandCase, runReviewCase
   ) where
@@ -76,14 +77,15 @@ commandPacket =
     :& #coverage := J.noul
       "Do the supplied excerpts include both a failing call site and its definition? Judge only the supplied excerpts."
 
+commandState = J.state
+  (#intent := ("Find the first source span to inspect for this E0061 repair" :: Text))
+
 -- This returns the full response, including raw distributions, diagnostics,
 -- resolved model and usage. Policy is applied afterwards by the caller.
 runCommandCase
   :: Member Jev effects
   => Eff effects (Either J.JevError (J.Response (J.Packet (EvidencePacket Diagnostic))))
-runCommandCase = J.ask
-  (J.state (#intent := ("Find the first source span to inspect for this E0061 repair" :: Text)))
-  commandPacket
+runCommandCase = J.ask commandState commandPacket
 
 -- Exact spans already present at the shared package's baseline commit.
 reviewEvidence :: [Evidence ReviewSource]
@@ -135,9 +137,10 @@ reviewPacket =
     :& #coverage := J.noul
       "Do the supplied source spans show both the accepted maximum budget and how each page request is limited? Judge only the supplied spans."
 
+reviewState = J.state
+  (#review_goal := ("Inspect retained-output byte bounds at commit eb73928" :: Text))
+
 runReviewCase
   :: Member Jev effects
   => Eff effects (Either J.JevError (J.Response (J.Packet (EvidencePacket ReviewSource))))
-runReviewCase = J.ask
-  (J.state (#review_goal := ("Inspect retained-output byte bounds at commit eb73928" :: Text)))
-  reviewPacket
+runReviewCase = J.ask reviewState reviewPacket

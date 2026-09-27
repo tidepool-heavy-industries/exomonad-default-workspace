@@ -35,7 +35,7 @@ construction = do
     (selectionQuestion commandCriteria /= selectionQuestion reviewCriteria
       && usefulWhen commandCriteria /= usefulWhen reviewCriteria)
   let commandRequest = J.request J.jevLatest
-        (J.state (#intent := ("command" :: Text.Text))) commandPacket
+        commandState commandPacket
   check "shared useful criterion appears once in the packet, not once per candidate"
     (case commandRequest of
       Left _ -> False
@@ -44,7 +44,7 @@ construction = do
           && all (not . Text.isInfixOf (usefulWhen commandCriteria)) wording)
   check "both authored packets prepare as a single request"
     (isRight commandRequest
-      && isRight (J.request J.jevLatest (J.state (#intent := ("review" :: Text.Text))) reviewPacket))
+      && isRight (J.request J.jevLatest reviewState reviewPacket))
   let duplicate = [head commandEvidence, head commandEvidence]
   check "the existing Jev request validator rejects duplicate candidate keys"
     (isLeft (J.request J.jevLatest
