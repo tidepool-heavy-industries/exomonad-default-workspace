@@ -20,7 +20,7 @@ import qualified Jev.Operators as J
 import Tidepool.Effects.Core (Jev)
 import Project.CoordinationPattern
 
-type ComparisonPacket = "update" J.::= J.Choice ComparisonAlternatives
+type ComparisonPacket = J.Packet ("update" J.::= J.Choice ComparisonAlternatives)
 
 -- | The original response remains available for distributions, model, usage,
 -- and diagnostics. A policy doubt stays separate from Jev transport failure.
