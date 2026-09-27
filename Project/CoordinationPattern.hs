@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedLabels #-}
-{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeOperators #-}
 
@@ -10,7 +9,7 @@ module Project.CoordinationPattern
   ( SourceFact (..), HandledFact (..), ComparisonInput (..)
   , ComparisonCriteria (..), ComparisonResult (..)
   , prepareComparison, comparisonState, comparisonQuestion, comparisonPacket
-  , readComparison
+  , ComparisonAlternatives, settleComparison
   ) where
 
 import Data.Text (Text)
@@ -73,15 +72,21 @@ comparisonState input = J.state
     :& #explicitly_handled := map renderHandled (comparisonHandled input)
   )
   where
-    renderIncoming fact = Text.intercalate " | "
-      [factSource fact, factClaim fact, "evidence: " <> factEvidence fact]
-    renderHandled fact = Text.intercalate " | "
-      [handledSource fact, handledClaim fact, "incorporated at: " <> incorporationRef fact]
+    renderIncoming fact =
+      [ ("source", factSource fact)
+      , ("claim", factClaim fact)
+      , ("evidence", factEvidence fact)
+      ]
+    renderHandled fact =
+      [ ("source", handledSource fact)
+      , ("claim", handledClaim fact)
+      , ("incorporation_ref", incorporationRef fact)
+      ]
 
 type ComparisonAlternatives =
-  "attention" J.::> ComparisonResult
-  J.:|: "repetition" J.::> ComparisonResult
-  J.:|: "unresolved" J.::> ComparisonResult
+  ("attention" J.::> ComparisonResult)
+    J.:|: (("repetition" J.::> ComparisonResult)
+      J.:|: ("unresolved" J.::> ComparisonResult))
 
 comparisonQuestion :: ComparisonCriteria -> J.Q Value (J.Choice ComparisonAlternatives)
 comparisonQuestion criteria = J.choice
@@ -99,10 +104,9 @@ comparisonQuestion criteria = J.choice
 -- | Append with ':&' when the same evidence should answer another question.
 comparisonPacket criteria = #update := comparisonQuestion criteria
 
--- | The selected alternative carries the typed continuation. Model service
--- failure and policy doubt are unresolved; neither becomes repetition.
-readComparison :: Either J.JevError (J.Answers J.:- J.Choice ComparisonAlternatives) -> ComparisonResult
-readComparison (Left failure) = Unresolved (Text.pack (show failure))
-readComparison (Right chosen) = case J.takenUnder J.careful chosen of
-  Left doubt -> Unresolved doubt.why
-  Right (J.Settled result) -> result
+-- | Interpretation preserves the caller's policy and any policy doubt.
+-- Transport failure belongs to the execution edge that called Jev.
+settleComparison
+  :: J.Policy p -> J.Chosen ComparisonAlternatives
+  -> Either J.Doubt (J.Settled p ComparisonResult)
+settleComparison = J.takenUnder

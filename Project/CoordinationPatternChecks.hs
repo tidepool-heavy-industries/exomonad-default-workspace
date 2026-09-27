@@ -52,14 +52,14 @@ construction = do
       _ -> False)
 
 -- | Intended for a bounded live trial, separate from the recipe's pure
--- construction checks. Return expected and observed outcomes for inspection;
--- Jev disagreement is evidence to revise a client criterion, not a reason to
--- silently coerce an outcome.
-liveCases :: Member Jev effects => Eff effects [(Text, ComparisonResult, ComparisonResult)]
+-- construction checks. Each response keeps Jev transport, policy doubt, and
+-- the full model response distinct for inspection.
+liveCases
+  :: Member Jev effects
+  => Eff effects [(Text, ComparisonResult,
+    Either ComparisonResult (Either J.JevError ComparisonRun))]
 liveCases = mapM run exampleCases
   where
     run (name, criteria, input, expected) = do
-      observed <- case prepareComparison input of
-        Left result -> pure result
-        Right ready -> readComparison <$> J.ask1 (comparisonState ready) (comparisonQuestion criteria)
+      observed <- assessComparison criteria input
       pure (name, expected, observed)

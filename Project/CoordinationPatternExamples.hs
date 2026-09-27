@@ -1,11 +1,15 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeOperators #-}
 
 -- | Two clients of the same comparison question. They supply the facts and
 -- their own criterion; the question constructor has no effect or delivery.
 module Project.CoordinationPatternExamples
   ( reviewedCandidateInput, consumerCheckpointInput
   , reviewedCandidateCriteria, consumerCheckpointCriteria
+  , ComparisonPacket, ComparisonRun (..), assessComparison
   , assessReviewedCandidate, assessConsumerCheckpoint
   , exampleCases
   ) where
@@ -15,6 +19,22 @@ import Data.Text (Text)
 import qualified Jev.Operators as J
 import Tidepool.Effects.Core (Jev)
 import Project.CoordinationPattern
+
+type ComparisonPacket = "update" J.::= J.Choice ComparisonAlternatives
+
+-- | The original response remains available for distributions, model, usage,
+-- and diagnostics. A policy doubt stays separate from Jev transport failure.
+data ComparisonRun = ComparisonRun
+  { runResponse :: J.Response ComparisonPacket
+  , runVerdict :: Either J.Doubt (J.Settled J.Careful ComparisonResult)
+  }
+
+instance Show ComparisonRun where
+  show run = "ComparisonRun { model = " <> show (J.resolvedModel (runResponse run))
+    <> ", usage = " <> show (J.usage (runResponse run))
+    <> ", verdict = " <> (case runVerdict run of
+      Left doubt -> show doubt <> " }"
+      Right (J.Settled verdict) -> show verdict <> " }")
 
 reviewedCandidateInput
   :: Text -> Text -> [SourceFact] -> [HandledFact] -> ComparisonInput
@@ -50,20 +70,27 @@ consumerCheckpointCriteria = ComparisonCriteria
 
 assessReviewedCandidate
   :: Member Jev effects
-  => Text -> Text -> [SourceFact] -> [HandledFact] -> Eff effects ComparisonResult
+  => Text -> Text -> [SourceFact] -> [HandledFact]
+  -> Eff effects (Either ComparisonResult (Either J.JevError ComparisonRun))
 assessReviewedCandidate candidate episode incoming handled =
-  assess reviewedCandidateCriteria (reviewedCandidateInput candidate episode incoming handled)
+  assessComparison reviewedCandidateCriteria (reviewedCandidateInput candidate episode incoming handled)
 
 assessConsumerCheckpoint
   :: Member Jev effects
-  => Text -> Text -> Text -> [SourceFact] -> [HandledFact] -> Eff effects ComparisonResult
+  => Text -> Text -> Text -> [SourceFact] -> [HandledFact]
+  -> Eff effects (Either ComparisonResult (Either J.JevError ComparisonRun))
 assessConsumerCheckpoint sourceCommit consumer episode incoming handled =
-  assess consumerCheckpointCriteria (consumerCheckpointInput sourceCommit consumer episode incoming handled)
+  assessComparison consumerCheckpointCriteria (consumerCheckpointInput sourceCommit consumer episode incoming handled)
 
-assess :: Member Jev effects => ComparisonCriteria -> ComparisonInput -> Eff effects ComparisonResult
-assess criteria input = case prepareComparison input of
-  Left unresolved -> pure unresolved
-  Right ready -> readComparison <$> J.ask1 (comparisonState ready) (comparisonQuestion criteria)
+assessComparison
+  :: Member Jev effects => ComparisonCriteria -> ComparisonInput
+  -> Eff effects (Either ComparisonResult (Either J.JevError ComparisonRun))
+assessComparison criteria input = case prepareComparison input of
+  Left unresolved -> pure (Left unresolved)
+  Right ready -> do
+    response <- J.ask (comparisonState ready) (comparisonPacket criteria)
+    pure (Right (fmap (\full -> ComparisonRun full
+      (settleComparison J.careful (J.answers full).update)) response))
 
 -- | Bounded live probes for an operator to run with Jev. These include a
 -- mixed stale/new update, exact repetition, missing evidence, a changed
