@@ -1,20 +1,15 @@
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
 
--- Shadow routing reuses the reminder actor's bounded judgments and history.
--- The existing notice policy still owns every outgoing notice.
+-- | Pure projection for owner-driven comparison of retained work notices.
+-- The owner reads the collector, then submits an episode to a separate
+-- ReminderTrial. The collector never waits on or sends to that trial.
 module Project.NotificationTrial
   ( NotificationDecision (..), notificationDecision, notificationPolicy
-  , ShadowWork, trialWork, trialJudgments, followWorkShadow, followWorkShadowWith
+  , notificationEpisode
   ) where
 
-import Control.Monad.Freer (Eff, Member)
 import Data.Text (Text)
-import Tidepool.Actors.Exomonad (ActorHandle, AgentRef, Response, Progress)
-import Tidepool.Effects.Core (Actor)
 import qualified Data.Text as Text
-import qualified Tidepool.Actor.Record as R
 import Tidepool.Worktree (renderGitOid)
 import Project.Routing
 import Project.Types
@@ -38,63 +33,37 @@ notificationPolicy taskIntent = ReminderPolicy
   , reminderEpisodeLimit = 16
   }
 
--- Each collector gets its own episode namespace and bounded reminder actor.
--- Retain both handles: finishWork and R.finish release their respective actors.
-data ShadowWork value = ShadowWork
-  { trialWork :: ActorHandle (WorkActor value)
-  , trialJudgments :: ReminderTrial
-  } deriving (Show)
-
-followWorkShadow
-  :: Member Actor effects
-  => AgentRef -> ReminderPolicy
-  -> [(Text, Response value, Progress WorkProgress)]
-  -> (value -> Text)
-  -> Eff effects (Either ReminderIssue (ShadowWork value))
-followWorkShadow = followWorkShadowWith semanticReminder
-
-followWorkShadowWith
-  :: Member Actor effects
-  => ReminderChoice -> AgentRef -> ReminderPolicy
-  -> [(Text, Response value, Progress WorkProgress)]
-  -> (value -> Text)
-  -> Eff effects (Either ReminderIssue (ShadowWork value))
-followWorkShadowWith choose owner policy inputs render = do
-  admitted <- startReminderTrialWith choose owner policy
-  case admitted of
-    Left issue -> pure (Left issue)
-    Right trial -> do
-      collector <- followWork inputs (shadowWorkNotifications trial render (notifyWork owner (workMessage render)))
-      pure (Right (ShadowWork collector trial))
-
--- R.get reads the collector's state after it has retained the incoming event.
--- Use its notice policy to compare the exact text sent by notifyWork.
-shadowWorkNotifications
-  :: ReminderTrial -> (value -> Text) -> WorkSink value -> WorkSink value
-shadowWorkNotifications trial render sink event = do
-  state <- R.get
-  let excerpt = workNoticeMessage (workNoticePolicy state) (workMessage render) event
-      key = "work-event:" <> Text.pack (show (length (workHistory state) - 1))
-      episode message = ReminderEpisode key
-        (Text.unlines
-          [ "Incoming event: " <> message
-          , "Incoming candidate facts: " <> case event of
-              WorkChanged _ delta -> Text.intercalate "; " (map candidateFacts (addedEvidence delta ++ map checkpointCandidate (addedReviewed delta)))
-              _ -> "none"
-          , "Explicitly incorporated candidates: " <> Text.intercalate "; "
-              [name <> "@" <> candidateFacts candidate
-              | (name, candidate) <- handledWork state]
-          , "Unresolved questions: " <> Text.intercalate "; "
-              [sourceName source <> ": " <> questionKey question <> ": "
-                <> questionFinding (questionDetails question)
-              | source <- collectedWork state
-              , question <- workQuestions (sourceProgress source)]
-          ])
-        ("Original event retained in workHistory at " <> key
-          <> "; exact responses remain in collectedWork. No omitted excerpt establishes completion.")
-  case excerpt of
-    Nothing -> sink event
-    Just message -> withReminders (trialReminders trial) (const (Just (episode message))) sink event
+-- | Project one retained event using the notice policy active when it was
+-- published. Pass that policy explicitly: a later policy change does not
+-- rewrite the event's history. An event without a notice has no trial episode.
+notificationEpisode
+  :: WorkNoticePolicy -> (value -> Text) -> WorkState value -> Int
+  -> Maybe ReminderEpisode
+notificationEpisode policy render state index
+  | index < 0 = Nothing
+  | otherwise = case drop index (workHistory state) of
+      [] -> Nothing
+      event : _ -> fmap (episode event) (workNoticeMessage policy (workMessage render) event)
+  where
+    key = "work-event:" <> Text.pack (show index)
+    episode event message = ReminderEpisode key
+      (Text.unlines
+        [ "Incoming event: " <> message
+        , "Incoming candidate facts: " <> case event of
+            WorkChanged _ delta -> Text.intercalate "; "
+              (map candidateFacts (addedEvidence delta ++ map checkpointCandidate (addedReviewed delta)))
+            _ -> "none"
+        , "Explicitly incorporated candidates: " <> Text.intercalate "; "
+            [name <> "@" <> candidateFacts candidate
+            | (name, candidate) <- handledWork state]
+        , "Unresolved questions: " <> Text.intercalate "; "
+            [sourceName source <> ": " <> questionKey question <> ": "
+              <> questionFinding (questionDetails question)
+            | source <- collectedWork state
+            , question <- workQuestions (sourceProgress source)]
+        ])
+      ("Original event retained in workHistory at " <> key
+        <> "; exact responses remain in collectedWork. No omitted excerpt establishes completion.")
 
 -- A repeated OID can carry changed check claims or remaining gates.
 candidateFacts :: Candidate -> Text

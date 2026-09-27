@@ -32,7 +32,7 @@ checks = [
   "Project.WorkflowReminderChecks.bounded",
   "Project.WorkflowReminderChecks.shadow",
   "Project.WorkflowReminderRoutingChecks.questionRouting",
-  "Project.WorkflowReminderRoutingChecks.shadowRouting",
+  "Project.WorkflowReminderRoutingChecks.snapshotTrial",
   "Project.WorkflowReminderChecks.semanticCases",
   "Project.WorkflowReminderChecks.checkpointCases",
   "Project.FollowupChecks.bounded",

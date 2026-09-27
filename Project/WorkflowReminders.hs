@@ -194,13 +194,14 @@ startRemindersUsing delivery choose recipient policy
 bounded :: Int -> Text -> Bool
 bounded limit value = not (Text.null (Text.strip value)) && Text.length value <= limit
 
--- | Decorate the existing sink; ordinary progress routing and its notification
--- receipt remain owned by that sink. This schedules evaluation without asking
--- the routing actor to wait for Jev. Inspect reminderRead for refusals/decisions.
+-- | Decorate the existing sink. Its notification is attempted first, but a
+-- failed reminder enqueue can still fail the routing actor before it records
+-- the sink receipt. Do not use this for a failure-isolated shadow trial.
 withReminders :: ActorHandle Reminders -> (WorkEvent value -> Maybe ReminderEpisode)
   -> WorkSink value -> WorkSink value
 withReminders reminders project sink event = do
+  receipt <- sink event
   case project event of
     Nothing -> pure ()
     Just episode -> R.send (reminderSubmit (R.client reminders)) episode
-  sink event
+  pure receipt

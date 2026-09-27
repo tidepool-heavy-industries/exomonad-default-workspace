@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Project.WorkflowReminderRoutingChecks (questionRouting, shadowRouting) where
+module Project.WorkflowReminderRoutingChecks (questionRouting, snapshotTrial) where
 
 import Control.Monad (void)
 import Control.Monad.Freer (Eff, Member)
@@ -67,10 +67,10 @@ questionRouting = do
   void $ turn (checkActor consumer) "respond (\"done\" :: Text)"
   void $ turn owner "finishWork routed\nR.finish reminders"
 
--- Exercise the shadow sink against actual collector state, with deterministic
--- judgment so this regression needs no provider or credits.
-shadowRouting :: Member RecipeCheck effects => Eff effects ()
-shadowRouting = do
+-- The owner reads a retained event and submits it to a separate shadow trial.
+-- Collector delivery remains independent of the trial actor.
+snapshotTrial :: Member RecipeCheck effects => Eff effects ()
+snapshotTrial = do
   owner <- root
   source <- git owner ["rev-parse", "HEAD"]
   script owner "progress-route-producer"
@@ -80,9 +80,8 @@ shadowRouting = do
     , "import Project.NotificationTrial"
     , "import Project.WorkflowReminders"
     , "import qualified Tidepool.Actor.Record as R"
-    , "Right experiment <- followWorkShadowWith (\\_ _ -> pure Suggest) me (notificationPolicy \"Integrate reviewed component slices\") [(\"producer\", producer, updates)] id"
-    , "let trial = trialJudgments experiment"
-    , "let routed = trialWork experiment"
+    , "Right trial <- startReminderTrialWith (\\_ _ -> pure Suggest) me (notificationPolicy \"Integrate reviewed component slices\")"
+    , "routed <- followWork [(\"producer\", producer, updates)] (notifyWork me (workMessage id))"
     ])
   void $ turn (checkActor producer) (Text.unlines
     [ "let question = Question \"ownership\" (DesignQuestion \"plans/component.md\" " <> gitOidLiteral source <> " \"Old status repeated, but who owns the new file?\" [\"ownership not assigned\"] [] [\"parent\"])"
@@ -90,14 +89,23 @@ shadowRouting = do
     ])
   observed <- turn owner (Text.unlines
     [ "view <- readWork routed"
+    , "let Just episode = notificationEpisode QuestionsAndResults id view 0"
+    , "judged <- R.call (reminderObserve (R.client (trialReminders trial))) episode"
     , "memory <- R.call (reminderRead (R.client (trialReminders trial))) ()"
     , "inspectFull (length (workNotices view) == 1 && length (reminderEntries memory) == 1"
-    , "  && all (\\entry -> (case reminderReceipt entry of { Nothing -> True; Just _ -> False }) && notificationDecision entry == InterruptOwner) (reminderEntries memory)"
+    , "  && (case judged of { Right entry -> (case reminderReceipt entry of { Nothing -> True; Just _ -> False }) && notificationDecision entry == InterruptOwner; Left _ -> False })"
     , "  && all (\\entry -> \"Unresolved questions: producer: ownership\" `T.isInfixOf` reminderFacts (reminderEpisode entry) && \"browser gate remains\" `T.isInfixOf` reminderFacts (reminderEpisode entry)) (reminderEntries memory))"
     ])
-  check "shadow routing uses actual unresolved questions and preserves original notice" ("True" `Text.isSuffixOf` output observed)
+  check "snapshot trial retains the original notice and judges its evidence" ("True" `Text.isSuffixOf` output observed)
   void $ turn (checkActor producer) "reportProgress (WorkProgress [] [question])"
-  duplicate <- turn owner "memory <- R.call (reminderRead (R.client (trialReminders trial))) ()\ninspectFull (length (reminderEntries memory))"
-  check "unchanged progress does not produce another shadow judgment" (lastOutput duplicate == "1")
+  duplicate <- turn owner "view <- readWork routed\nmemory <- R.call (reminderRead (R.client (trialReminders trial))) ()\ninspectFull (length (workNotices view) == 1 && length (reminderEntries memory) == 1 && notificationEpisode QuestionsAndResults id view 1 == Nothing)"
+  check "unchanged progress does not produce another collector notice" ("True" `Text.isSuffixOf` output duplicate)
+  void $ turn owner "R.finish (trialReminders trial)"
+  void $ turn (checkActor producer) (Text.unlines
+    [ "let second = Question \"new-gate\" (DesignQuestion \"plans/component.md\" " <> gitOidLiteral source <> " \"New gate needs owner attention\" [\"gate unresolved\"] [] [\"parent\"])"
+    , "reportProgress (WorkProgress [] [question,second])"
+    ])
+  afterTrial <- turn owner "view <- readWork routed\ninspectFull (length (workNotices view) == 2 && length (workHistory view) == 3)"
+  check "stopped trial does not affect later ordinary notices" ("True" `Text.isSuffixOf` output afterTrial)
   void $ turn (checkActor producer) "respond (\"done\" :: Text)"
-  void $ turn owner "finishWork routed\nR.finish (trialReminders trial)"
+  void $ turn owner "finishWork routed"
