@@ -22,7 +22,7 @@ modules = [
   "Project.PrepareContinue", "Project.RetainedEvidence",
   "Project.AssumptionWatch", "Project.ParallelInvestigate", "Project.SlowCommandWatch",
   "Project.BackgroundInvestigator", "Project.BackgroundCommandExample",
-  "Project.WorkflowReminders", "Project.WorkflowReminderExamples", "Project.WorkflowReminderRoutingChecks",
+  "Project.NotificationTrial", "Project.WorkflowReminders", "Project.WorkflowReminderExamples", "Project.WorkflowReminderRoutingChecks",
   "Project.Interview", "Project.WorkflowExamples", "Project.ReviewFlow",
 ]
 spec = "AgentSpec.agentSpec"
@@ -30,8 +30,11 @@ checks = [
   "Project.BackgroundCommandExampleChecks.completion",
   "Project.MergeChecks.redPreserved",
   "Project.WorkflowReminderChecks.bounded",
+  "Project.WorkflowReminderChecks.shadow",
   "Project.WorkflowReminderRoutingChecks.questionRouting",
+  "Project.WorkflowReminderRoutingChecks.shadowRouting",
   "Project.WorkflowReminderChecks.semanticCases",
+  "Project.WorkflowReminderChecks.checkpointCases",
   "Project.FollowupChecks.bounded",
   "Project.AutomationChecks.integration",
   "Project.CheckResultsChecks.completionRouting",

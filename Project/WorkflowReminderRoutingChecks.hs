@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Project.WorkflowReminderRoutingChecks (questionRouting) where
+module Project.WorkflowReminderRoutingChecks (questionRouting, shadowRouting) where
 
 import Control.Monad (void)
 import Control.Monad.Freer (Eff, Member)
@@ -66,3 +66,38 @@ questionRouting = do
   check "terminal result keeps ordinary sink notice without a reminder" ("True" `Text.isSuffixOf` output terminal)
   void $ turn (checkActor consumer) "respond (\"done\" :: Text)"
   void $ turn owner "finishWork routed\nR.finish reminders"
+
+-- Exercise the shadow sink against actual collector state, with deterministic
+-- judgment so this regression needs no provider or credits.
+shadowRouting :: Member RecipeCheck effects => Eff effects ()
+shadowRouting = do
+  owner <- root
+  source <- git owner ["rev-parse", "HEAD"]
+  script owner "progress-route-producer"
+  producer <- activation
+  void $ turn owner (Text.unlines
+    [ "import qualified Data.Text as T"
+    , "import Project.NotificationTrial"
+    , "import Project.WorkflowReminders"
+    , "import qualified Tidepool.Actor.Record as R"
+    , "Right experiment <- followWorkShadowWith (\\_ _ -> pure Suggest) me (notificationPolicy \"Integrate reviewed component slices\") [(\"producer\", producer, updates)] id"
+    , "let trial = trialJudgments experiment"
+    , "let routed = trialWork experiment"
+    ])
+  void $ turn (checkActor producer) (Text.unlines
+    [ "let question = Question \"ownership\" (DesignQuestion \"plans/component.md\" " <> gitOidLiteral source <> " \"Old status repeated, but who owns the new file?\" [\"ownership not assigned\"] [] [\"parent\"])"
+    , "reportProgress (WorkProgress [Candidate " <> gitOidLiteral source <> " [\"unit-one\"] [\"browser gate remains\"]] [question])"
+    ])
+  observed <- turn owner (Text.unlines
+    [ "view <- readWork routed"
+    , "memory <- R.call (reminderRead (R.client (trialReminders trial))) ()"
+    , "inspectFull (length (workNotices view) == 1 && length (reminderEntries memory) == 1"
+    , "  && all (\\entry -> (case reminderReceipt entry of { Nothing -> True; Just _ -> False }) && notificationDecision entry == InterruptOwner) (reminderEntries memory)"
+    , "  && all (\\entry -> \"Unresolved questions: producer: ownership\" `T.isInfixOf` reminderFacts (reminderEpisode entry) && \"browser gate remains\" `T.isInfixOf` reminderFacts (reminderEpisode entry)) (reminderEntries memory))"
+    ])
+  check "shadow routing uses actual unresolved questions and preserves original notice" ("True" `Text.isSuffixOf` output observed)
+  void $ turn (checkActor producer) "reportProgress (WorkProgress [] [question])"
+  duplicate <- turn owner "memory <- R.call (reminderRead (R.client (trialReminders trial))) ()\ninspectFull (length (reminderEntries memory))"
+  check "unchanged progress does not produce another shadow judgment" (lastOutput duplicate == "1")
+  void $ turn (checkActor producer) "respond (\"done\" :: Text)"
+  void $ turn owner "finishWork routed\nR.finish (trialReminders trial)"
