@@ -1,22 +1,31 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeOperators #-}
 
 -- | Two authored uses of the same pure question. Both ask only over these
 -- supplied, bounded values; neither starts a command or reads a checkout.
 module Project.EvidencePatternExamples
   ( Diagnostic (..), ReviewSource (..)
+  , EvidencePacket
   , commandEvidence, reviewEvidence
   , commandCriteria, reviewCriteria
   , commandPacket, reviewPacket
   , runCommandCase, runReviewCase
   ) where
 
+import Control.Monad.Freer (Eff, Member)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Jev.Operators as J
 import Jev.Operators (Packet ((:=), (:&)))
 import Project.EvidencePattern
+import Tidepool.Effects.Core (Jev)
+
+type EvidencePacket a = ("best" J.::= J.Choice (EvidenceAlternatives a))
+  J.:& ("coverage" J.::= J.Noul)
 
 data Diagnostic = Diagnostic
   { diagnosticCode :: Text
@@ -58,6 +67,7 @@ commandCriteria = (defaultCriteria "identify the best first source span to repai
   , insufficientWhen = "The retained excerpts do not show a usable failing site or the task is underspecified."
   }
 
+commandPacket :: J.Packet (EvidencePacket Diagnostic) J.Questions
 commandPacket =
   #best := evidenceQuestion commandCriteria
     (\row -> "Diagnostic code: " <> diagnosticCode (evidenceValue row)
@@ -68,6 +78,9 @@ commandPacket =
 
 -- This returns the full response, including raw distributions, diagnostics,
 -- resolved model and usage. Policy is applied afterwards by the caller.
+runCommandCase
+  :: Member Jev effects
+  => Eff effects (Either J.JevError (J.Response (J.Packet (EvidencePacket Diagnostic))))
 runCommandCase = J.ask
   (J.state (#intent := ("Find the first source span to inspect for this E0061 repair" :: Text)))
   commandPacket
@@ -112,6 +125,7 @@ reviewCriteria = (defaultCriteria "choose the strongest supplied source evidence
   , insufficientWhen = "The supplied spans omit the budget or read path needed to judge the bound."
   }
 
+reviewPacket :: J.Packet (EvidencePacket ReviewSource) J.Questions
 reviewPacket =
   #best := evidenceQuestion reviewCriteria
     (\row -> "At commit " <> reviewCommit (evidenceValue row)
@@ -121,6 +135,9 @@ reviewPacket =
     :& #coverage := J.noul
       "Do the supplied source spans show both the accepted maximum budget and how each page request is limited? Judge only the supplied spans."
 
+runReviewCase
+  :: Member Jev effects
+  => Eff effects (Either J.JevError (J.Response (J.Packet (EvidencePacket ReviewSource))))
 runReviewCase = J.ask
   (J.state (#review_goal := ("Inspect retained-output byte bounds at commit eb73928" :: Text)))
   reviewPacket
