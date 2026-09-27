@@ -6,25 +6,28 @@
 -- integration consumes an exact review, and verification consumes a checked
 -- publication. The interpreter owns admissions and resumes from source events.
 module Project.WorkPlan
-  ( WorkPlan (..), ComponentScope (..), Development (..), ReviewSpec (..)
+  ( WorkPlan (..), ComponentScope (..), Development (..), WorkerAssignment (..), ReviewSpec (..)
   , IntegrationSpec (..), Verification (..)
   , Developed (..), Reviewed (..), CheckedSource (..), AcceptedSource (..)
   , PlanFailure (..), NodeKind (..), PlanPosition (..), enterComponent
   , checkComponentTask, checkComponentAmendment, effectiveRepairLimit
   , PlanStep (..), stepPlan
-  , develop, review, integrate, verify, parallel
+  , develop, review, integrate, verify, parallel, lunaWorker
   ) where
 
 import Data.Text (Text)
+import qualified Tidepool.Actor.Record as R
+import Tidepool.Inspection (Display (..), displayRecord)
 import Tidepool.Actors.Exomonad
   ( AgentRef, Branch, CodingEffects, Label, GitOid, Progress, Response
-  , ResponseResult, WorktreeId )
+  , ResponseResult, WorktreeId, ForkEffort, WorktreeSeed )
 import Project.FocusedGateExample (PlanCheck, PlanReport)
+import Project.Work (lunaTaskInputFrom, taskContext)
 import Project.Merge (MergeTarget, MergeResult)
 import Project.ReviewFlow (ReviewFlowPolicy, ReviewFlowState)
 import Project.Types
   ( Task (..), Candidate, Outcome, WorkProgress, ReviewedCheckpoint
-  , PlanAmendment (..) )
+  , PlanAmendment (..), Incorporation )
 
 -- | The lead may refine implementation within this contract. A changed
 -- acceptance criterion or sibling obligation goes back to the owning plan.
@@ -39,7 +42,25 @@ data ComponentScope = ComponentScope
 -- The coordinator, rather than the author of this value, performs admission.
 data Development
   = RetainedWorker AgentRef Label Task
-  | ForkWorker Task (Task -> Branch CodingEffects Task (Outcome Candidate))
+  | ForkWorker Task
+      (WorkerAssignment -> Branch CodingEffects WorkerAssignment (Outcome Candidate))
+
+-- | A new worker receives the exact reporting route in its typed input. The
+-- route's sender identity is still checked by the coordinator at report time.
+data WorkerAssignment = WorkerAssignment
+  { workerTask :: Task
+  , incorporationRoute :: R.Send Incorporation
+  }
+
+instance Display WorkerAssignment where
+  displayTree assignment = displayRecord 0 "WorkerAssignment"
+    [("workerTask", displayTree (workerTask assignment))]
+
+lunaWorker
+  :: Label -> ForkEffort -> WorktreeSeed -> WorkerAssignment
+  -> Branch CodingEffects WorkerAssignment (Outcome Candidate)
+lunaWorker label effort source =
+  lunaTaskInputFrom label effort source (taskContext . workerTask)
 
 data ReviewSpec = ReviewSpec
   { reviewTask :: Task
@@ -214,7 +235,8 @@ stepPlan = step []
       NeedVerification scopes spec checked next ->
         NeedVerification scopes spec checked (Component scope . next)
       NeedParallel scopes left right next ->
-        NeedParallel scopes left right (Component scope . next)
+        NeedParallel scopes (Component scope left) (Component scope right)
+          (Component scope . next)
 
 instance Functor WorkPlan where
   fmap f plan = Bind plan (Pure . f)
