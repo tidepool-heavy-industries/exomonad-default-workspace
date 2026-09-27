@@ -14,7 +14,7 @@ systemd_slice = "swarm.slice"
 source_roots = ["."]
 modules = [
   "Project.Types", "Project.Actors", "Project.Work", "Project.Routing", "Project.Observe",
-  "Project.Shell", "Project.Sift", "Project.Lookup", "Project.Reflex", "Project.Evidence", "Project.Contract",
+  "Project.Shell", "Project.Sift", "Project.Lookup", "Project.ConversationContext", "Project.Reflex", "Project.Evidence", "Project.Contract",
   "Project.Investigate", "Project.Merge", "Project.Review", "Project.Search", "Project.History",
   "Project.FieldNotes", "Project.RebaseRouter", "Project.BaselineIncorporation", "Project.SupervisionProfiles",
   "Project.FieldNotesChecks", "Project.RebaseRouterChecks", "Project.BaselineIncorporationChecks",
@@ -50,6 +50,7 @@ checks = [
   "Project.JevChecks.investigation",
   "Project.JevChecks.review",
   "Project.JevChecks.reflex",
+  "Project.ConversationContextChecks.boundedHistory",
   "Project.RebaseRouterChecks.agentRef",
   "Project.RebaseRouterChecks.facts",
   "Project.BaselineIncorporationChecks.episode",
