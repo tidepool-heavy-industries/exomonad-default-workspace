@@ -75,7 +75,7 @@ import qualified Tidepool.Command as Cmd
 import Tidepool.Actors.Exomonad hiding (record)
 import Tidepool.Aeson.Value (object, (.=))
 import Tidepool.Effects.Core (GitRef (..), Jev, Commands)
-import Tidepool.Worktree (renderGitOid)
+import Tidepool.Worktree (renderGitOid, WorktreeReceipt (..))
 
 import Project.Contract
 import Project.Evidence
@@ -293,15 +293,15 @@ gitText arguments = do
     (_, _) -> Left ("git " <> Text.unwords arguments <> " "
                      <> fromMaybe ("exited " <> Text.pack (show code)) (Cmd.failure result))
 
-candidateOid :: WorktreeEvidence -> Maybe GitOid
-candidateOid evidence = case evidence of
-  WorktreeObserved _ _ observation -> Just (headOid (submittedHead observation))
+candidateSource :: WorktreeEvidence -> Maybe (WorktreeId, GitOid)
+candidateSource evidence = case evidence of
+  WorktreeObserved source _ observation -> Just (treeId source, headOid (submittedHead observation))
   _ -> Nothing
 
 deriveEvidence
-  :: Contract -> GitOid -> ImplReport
+  :: Contract -> WorktreeId -> GitOid -> ImplReport
   -> Handler ReviewState ReviewEffects (Either Text Evidence)
-deriveEvidence contract oid report = do
+deriveEvidence contract source oid report = do
   let range = renderGitOid (contractBase contract) <> ".." <> renderGitOid oid
   statOrFailure <- gitText ["diff", "--numstat", range]
   hunksOrFailure <- gitText (["diff", "--unified=80", range, "--"] ++ contractOwnedPaths contract)
@@ -319,7 +319,8 @@ deriveEvidence contract oid report = do
         claims = CheckResult "claimed-command" ChildReported
           (not (Text.null (reportCommand report))) (reportCommand report)
     in Evidence
-      { evidenceCandidate = oid
+      { evidenceSource = source
+      , evidenceCandidate = oid
       , evidenceStat = stat
       , evidenceHunks = hunks
       , evidenceOutput = output
@@ -351,13 +352,13 @@ onCandidate own result = do
         (Text.pack (show failure)) "root decides whether to re-admit"
       notify' Alert Nothing ("the implementer did not settle: " <> Text.pack (show failure))
         RanHere index "re-admit the child or drop the task"
-    Right receipt -> case candidateOid (responseWorktree receipt) of
+    Right receipt -> case candidateSource (responseWorktree receipt) of
       Nothing -> do
         index <- record "mechanical" Nothing RanHere "no_submission"
           "the reply carries no bound-worktree evidence" "root decides"
         notify' Alert Nothing "the reply carries no submitted OID"
           RanHere index "ask the child to commit, or re-admit it"
-      Just oid -> deriveEvidence contract oid (responseValue receipt) >>= \derived -> case derived of
+      Just (source, oid) -> deriveEvidence contract source oid (responseValue receipt) >>= \derived -> case derived of
        Left failure -> do
         index <- record "mechanical" (Just oid) RanHere "evidence_unavailable" failure
           "root decides; the candidate was not compared"
@@ -978,6 +979,7 @@ publishCandidate own contract evidence = do
   let oid = evidenceCandidate evidence
   outcome <- R.call (publish (R.client target)) Merge.PublishRequest
     { Merge.publishTask = contractTask contract
+    , Merge.publishSource = evidenceSource evidence
     , Merge.publishCandidate = oid
     , Merge.publishMessage = "Merge " <> contractTask contract <> " " <> shortOid oid
     }

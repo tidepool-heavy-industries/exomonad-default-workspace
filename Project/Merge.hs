@@ -72,6 +72,7 @@ newtype MergeTarget = MergeTarget
 
 data PublishRequest = PublishRequest
   { publishTask :: Text
+  , publishSource :: WorktreeId
   , publishCandidate :: GitOid
   , publishMessage :: Text
   } deriving (Show, Eq)
@@ -194,6 +195,7 @@ runPublish request = do
         Nothing -> do
           outcome <- tryMerge MergeRequest
             { mergeSourceHead = publishCandidate request
+            , mergeSourceWorktree = publishSource request
             , mergeSourceBranch = Nothing
             , mergeTargetWorktree = worktreeId handle
             , mergeMessage = publishMessage request
