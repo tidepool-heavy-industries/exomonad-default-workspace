@@ -70,7 +70,7 @@ data CorrectionReply
 data CorrectionState = CorrectionState
   { correctionRequest :: RequestId
   , correctionChange :: BaselineChange
-  , correctionUpdate :: RequestUpdate
+  , correctionUpdate :: Either ReplyError RequestUpdate
   , correctionDelivery :: Maybe (Either ReplyError RequestUpdateState)
   , correctionReported :: Maybe Incorporation
   , correctionReportRefusal :: Maybe Text
@@ -317,10 +317,15 @@ coordinator checkout owner checkpoints plan route = R.start $ R.withWorktree che
                         (responseActor (activeResponse active)) (activeTask active) question checks
                   updated <- updateRequest response (incorporationUpdate change target)
                   case updated of
-                    Left refused -> pure (CorrectionRefused (Text.pack (show refused)))
+                    Left refused -> do
+                      R.modify' (\current -> current { planCorrection = Just
+                        (CorrectionState (requestId response) change (Left refused)
+                          Nothing Nothing Nothing checks) })
+                      pure (CorrectionRefused (Text.pack (show refused)))
                     Right update -> do
                       R.modify' (\current -> current { planCorrection = Just
-                        (CorrectionState (requestId response) change update Nothing Nothing Nothing checks) })
+                        (CorrectionState (requestId response) change (Right update)
+                          Nothing Nothing Nothing checks) })
                       pure (CorrectionAccepted update)
             observed <- pollResponse response
             case (valid, observed) of
@@ -336,15 +341,19 @@ coordinator checkout owner checkpoints plan route = R.start $ R.withWorktree che
         else case planCorrection state of
           Nothing -> pure Nothing
           Just correction -> do
-            observed <- pollRequestUpdate (correctionUpdate correction)
-            let refreshed = correction { correctionDelivery = Just observed }
-            R.modify' (\current -> current { planCorrection = Just refreshed })
-            pure (Just refreshed)
+            case correctionUpdate correction of
+              Left _ -> pure (Just correction)
+              Right update -> do
+                observed <- pollRequestUpdate update
+                let refreshed = correction { correctionDelivery = Just observed }
+                R.modify' (\current -> current { planCorrection = Just refreshed })
+                pure (Just refreshed)
     , reportIncorporation = \report -> do
         state <- R.get
         origin <- R.sender @(Coordinator result)
         case planCorrection state of
           Nothing -> pure ()
+          Just correction | Left _ <- correctionUpdate correction -> pure ()
           Just correction -> do
             let matching = [active | active <- planDevelopments state,
                   requestId (activeResponse active) == correctionRequest correction]
