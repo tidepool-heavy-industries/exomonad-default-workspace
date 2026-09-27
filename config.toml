@@ -27,6 +27,7 @@ modules = [
 ]
 spec = "AgentSpec.agentSpec"
 checks = [
+  "Project.MergeChecks.redPreserved",
   "Project.WorkflowReminderChecks.bounded",
   "Project.WorkflowReminderRoutingChecks.questionRouting",
   "Project.WorkflowReminderChecks.semanticCases",
