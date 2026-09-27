@@ -22,4 +22,3 @@ construction = do
       single = J.request J.jevLatest evidence (#fault := faultQuestion criteria)
   check "disabled speculative question sends exactly the single-question request"
     (case (sent, single) of { (Right a, Right b) -> a == b; _ -> False })
-

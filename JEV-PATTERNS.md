@@ -51,3 +51,14 @@ a Jev backend.
 Try the examples on a recurring task before making a framework. Report useful
 branches, uncertainty, wrong decisions, overrides, packet usage and model turns
 avoided. Synthetic cases establish neither reliability nor savings on a wave.
+
+## One bounded notification trial
+
+`Project.NotificationTrial.notificationEpisode` projects an explicit retained
+collector snapshot and event index. Pass the notice policy used for that event;
+a later policy change does not rewrite history. Submit the episode to a separate
+`ReminderTrial`, inspect its retained judgment, and finish that trial when done.
+The collector keeps its ordinary sink. There is no automatic suppression or
+background watchdog. A trial actor failure therefore cannot interrupt collection.
+The deterministic recipes exercise retention and stopped-trial isolation; semantic
+quality on actual work remains an experiment.
