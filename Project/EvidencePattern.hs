@@ -66,8 +66,7 @@ evidenceOffers criteria project rows =
     J..| J.many #candidate evidenceKey candidateWording rows
   where
     candidateWording row = Text.intercalate "\n"
-      [ usefulWhen criteria
-      , "Source: " <> evidenceSource row
+      [ "Source: " <> evidenceSource row
       , "Excerpt: " <> evidenceExcerpt row
       , project row
       ]
@@ -76,7 +75,8 @@ evidenceQuestion
   :: EvidenceCriteria -> (Evidence a -> Text) -> [Evidence a]
   -> J.Q Value (J.Choice (EvidenceAlternatives a))
 evidenceQuestion criteria project rows =
-  J.choice (selectionQuestion criteria) (evidenceOffers criteria project rows)
+  J.choice (selectionQuestion criteria <> " " <> usefulWhen criteria)
+    (evidenceOffers criteria project rows)
 
 -- | This applies a caller-chosen confidence policy. A settled
 -- 'InsufficientEvidence' remains distinct from transport failure and doubt.

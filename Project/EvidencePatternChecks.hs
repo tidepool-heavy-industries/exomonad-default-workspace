@@ -34,8 +34,16 @@ construction = do
   check "two clients override criteria while retaining the same shape"
     (selectionQuestion commandCriteria /= selectionQuestion reviewCriteria
       && usefulWhen commandCriteria /= usefulWhen reviewCriteria)
+  let commandRequest = J.request J.jevLatest
+        (J.state (#intent := ("command" :: Text.Text))) commandPacket
+  check "shared useful criterion appears once in the packet, not once per candidate"
+    (case commandRequest of
+      Left _ -> False
+      Right request ->
+        Text.count (usefulWhen commandCriteria) (Text.pack (show request)) == 1
+          && all (not . Text.isInfixOf (usefulWhen commandCriteria)) wording)
   check "both authored packets prepare as a single request"
-    (isRight (J.request J.jevLatest (J.state (#intent := ("command" :: Text.Text))) commandPacket)
+    (isRight commandRequest
       && isRight (J.request J.jevLatest (J.state (#intent := ("review" :: Text.Text))) reviewPacket))
   let duplicate = [head commandEvidence, head commandEvidence]
   check "the existing Jev request validator rejects duplicate candidate keys"
