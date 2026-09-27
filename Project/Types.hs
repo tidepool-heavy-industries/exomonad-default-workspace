@@ -323,18 +323,19 @@ data DesignSlot = DesignSlot
 
 -- Evidence and questions are independently useful progress payloads. They are
 -- authored data, never authority to retry, stop or release a resource.
-data WorkProgress = WorkProgressData [Candidate] Attention [ReviewedCheckpoint]
+data WorkProgress = WorkProgressData
+  { workEvidence :: [Candidate]
+  , workQuestions :: Attention
+  , workReviewed :: [ReviewedCheckpoint]
+  }
   deriving (Show, Eq)
 
--- Existing two-argument progress remains ordinary authored syntax. The
--- internal representation retains validated reviews in the same payload.
+-- Two-argument construction stays concise; real record fields preserve the
+-- reviewed value when callers update evidence or questions.
 pattern WorkProgress :: [Candidate] -> Attention -> WorkProgress
-pattern WorkProgress { workEvidence, workQuestions } <- WorkProgressData workEvidence workQuestions _
+pattern WorkProgress evidence questions <- WorkProgressData evidence questions _
   where WorkProgress evidence questions = WorkProgressData evidence questions []
 {-# COMPLETE WorkProgress #-}
-
-workReviewed :: WorkProgress -> [ReviewedCheckpoint]
-workReviewed (WorkProgressData _ _ reviewed) = reviewed
 
 withReviewedCheckpoint :: ReviewedCheckpoint -> WorkProgress -> WorkProgress
 withReviewedCheckpoint checkpoint progress = WorkProgressData

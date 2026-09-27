@@ -304,10 +304,10 @@ reviewedCheckpoints = do
   baseline <- git owner ["rev-parse", "HEAD"]
   void $ turn owner ("let sourceHead = " <> gitOidLiteral baseline)
   void $ turn owner "import qualified Tidepool.Actor.Record as R\nimport qualified Data.Text as Text"
-  recordPattern <- turn owner
-    "let WorkProgress { workQuestions = ordinaryQuestions } = WorkProgress [] []\nnull ordinaryQuestions"
-  check "existing two-field record patterns still match ordinary progress"
-    (lastOutput recordPattern == "True")
+  ordinary <- turn owner
+    "let progress = WorkProgress [] []\nnull (workEvidence progress) && null (workQuestions progress) && null (workReviewed progress)"
+  check "ordinary two-argument progress starts without reviewed evidence"
+    (lastOutput ordinary == "True")
   script owner "reviewed-checkpoint-route"
   reviewerActor <- activation
   pending <- turn owner "admitReviewedCheckpoint reviewRequest reviewer"
@@ -359,6 +359,10 @@ reviewedCheckpoints = do
   void $ git (checkActor reviewerActor) ["clean", "-f", "--", "README.md"]
   void $ turn owner
     "Right reviewed <- admitReviewedCheckpoint reviewRequest reviewer"
+  updates <- turn owner
+    "let original = withReviewedCheckpoint reviewed (WorkProgress [] [])\nlet withQuestions = original { workQuestions = [Question \"update\" (DesignQuestion \"plans/component.md\" sourceHead \"owner choice\" [] [] [])] }\nlet withEvidence = original { workEvidence = [checkpointCandidate reviewed] }\nworkReviewed withQuestions == [reviewed] && workReviewed withEvidence == [reviewed]"
+  check "updating questions or evidence preserves the reviewed checkpoint"
+    (lastOutput updates == "True")
   receipt <- turn owner
     "executionRequest (responseExecution (checkpointReceipt reviewed)) == requestId reviewer"
   check "the checkpoint retains the original review response reference"
