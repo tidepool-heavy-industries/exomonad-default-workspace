@@ -20,8 +20,8 @@ import Tidepool.Check (RecipeCheck, check)
 
 construction :: Member RecipeCheck effects => Eff effects ()
 construction = do
-  let commandOffers = J.offered (evidenceOffers commandCriteria (const "") commandEvidence)
-      reviewOffers = J.offered (evidenceOffers reviewCriteria (const "") reviewEvidence)
+  let commandOffers = J.offered (evidenceOffers commandCriteria describeEvidence commandEvidence)
+      reviewOffers = J.offered (evidenceOffers reviewCriteria describeEvidence reviewEvidence)
       keys = map fst commandOffers
       wording = map snd commandOffers
   check "the bounded set includes explicit none and insufficient choices"
@@ -31,6 +31,10 @@ construction = do
     ("eb73928 Project/JevChecks.hs lines 37-40" `Text.isInfixOf` (wording !! 2)
       && evidenceExcerpt (head commandEvidence) `Text.isInfixOf` (wording !! 2)
       && "eb73928 Project/RetainedEvidence.hs lines 19-22" `Text.isInfixOf` snd (reviewOffers !! 2))
+  let sharedOffers = J.offered (evidenceOffers commandCriteria
+        (\row -> "Entry " <> evidenceKey row <> " in `evidence`") commandEvidence)
+  check "shared-state wording refers to entries without repeating excerpts"
+    (all (not . Text.isInfixOf (evidenceExcerpt (head commandEvidence)) . snd) sharedOffers)
   check "two clients override criteria while retaining the same shape"
     (selectionQuestion commandCriteria /= selectionQuestion reviewCriteria
       && usefulWhen commandCriteria /= usefulWhen reviewCriteria)
@@ -41,7 +45,9 @@ construction = do
       Left _ -> False
       Right request ->
         Text.count (usefulWhen commandCriteria) (Text.pack (show request)) == 1
-          && all (not . Text.isInfixOf (usefulWhen commandCriteria)) wording)
+          && all (not . Text.isInfixOf (usefulWhen commandCriteria)) wording
+          && Text.count (Text.takeWhile (/= '\n') (evidenceExcerpt (head commandEvidence)))
+               (Text.pack (show request)) == 1)
   check "both authored packets prepare as a single request"
     (isRight commandRequest
       && isRight (J.request J.jevLatest reviewState reviewPacket))

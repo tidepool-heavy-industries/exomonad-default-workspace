@@ -10,7 +10,7 @@ module Project.EvidencePattern
   , EvidenceCriteria (..), defaultCriteria
   , EvidenceSelection (..)
   , EvidenceAlternatives
-  , evidenceOffers, evidenceQuestion, settleEvidence
+  , describeEvidence, evidenceOffers, evidenceQuestion, settleEvidence
   ) where
 
 import Data.Text (Text)
@@ -55,28 +55,32 @@ type EvidenceAlternatives a =
     :|: (("insufficient" ::> EvidenceSelection a)
       :|: ("candidate" ::* Evidence a))
 
--- | The provenance and exact supplied excerpt are always included. The
--- projection adds client-specific context without replacing either of them.
+-- | The default candidate wording keeps the address and exact supplied
+-- excerpt beside the runtime option key. A client may use this directly or
+-- supply complete wording of its own when the evidence is in shared state.
+describeEvidence :: Evidence a -> Text
+describeEvidence row = Text.intercalate "\n"
+  [ "Key: " <> evidenceKey row
+  , "Source: " <> evidenceSource row
+  , "Excerpt: " <> evidenceExcerpt row
+  ]
+
+-- | The wording function controls each candidate's complete wording.
+-- Alternatives still carry the original typed row, never a lookup key.
 evidenceOffers
   :: EvidenceCriteria -> (Evidence a -> Text) -> [Evidence a]
   -> J.Offers (EvidenceAlternatives a)
-evidenceOffers criteria project rows =
+evidenceOffers criteria describe rows =
   J.alt #none (noneWhen criteria) NoUsefulEvidence
     J..| J.alt #insufficient (insufficientWhen criteria) InsufficientEvidence
-    J..| J.many #candidate evidenceKey candidateWording rows
-  where
-    candidateWording row = Text.intercalate "\n"
-      [ "Source: " <> evidenceSource row
-      , "Excerpt: " <> evidenceExcerpt row
-      , project row
-      ]
+    J..| J.many #candidate evidenceKey describe rows
 
 evidenceQuestion
   :: EvidenceCriteria -> (Evidence a -> Text) -> [Evidence a]
   -> J.Q Value (J.Choice (EvidenceAlternatives a))
-evidenceQuestion criteria project rows =
+evidenceQuestion criteria describe rows =
   J.choice (selectionQuestion criteria <> " " <> usefulWhen criteria)
-    (evidenceOffers criteria project rows)
+    (evidenceOffers criteria describe rows)
 
 -- | This applies a caller-chosen confidence policy. A settled
 -- 'InsufficientEvidence' remains distinct from transport failure and doubt.

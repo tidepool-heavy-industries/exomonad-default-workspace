@@ -71,14 +71,15 @@ commandCriteria = (defaultCriteria "identify the best first source span to repai
 commandPacket :: J.Packet (EvidencePacket Diagnostic) J.Questions
 commandPacket =
   #best := evidenceQuestion commandCriteria
-    (\row -> "Diagnostic code: " <> diagnosticCode (evidenceValue row)
-      <> "; interpretation: " <> diagnosticInterpretation (evidenceValue row))
+    (\row -> "Entry " <> evidenceKey row <> " in " <> J.field #evidence commandState)
     commandEvidence
     :& #coverage := J.noul
-      "Do the supplied excerpts include both a failing call site and its definition? Judge only the supplied excerpts."
+      ("Do entries in " <> J.field #evidence commandState
+        <> " identify the failing call location and a corresponding definition location? Judge only those entries.")
 
 commandState = J.state
-  (#intent := ("Find the first source span to inspect for this E0061 repair" :: Text))
+  (#intent := ("Find the first source span to inspect for this E0061 repair" :: Text)
+    :& #evidence := sourceRows commandEvidence)
 
 -- This returns the full response, including raw distributions, diagnostics,
 -- resolved model and usage. Policy is applied afterwards by the caller.
@@ -130,15 +131,24 @@ reviewCriteria = (defaultCriteria "choose the strongest supplied source evidence
 reviewPacket :: J.Packet (EvidencePacket ReviewSource) J.Questions
 reviewPacket =
   #best := evidenceQuestion reviewCriteria
-    (\row -> "At commit " <> reviewCommit (evidenceValue row)
-      <> " in " <> reviewPath (evidenceValue row)
-      <> " lines " <> reviewLines (evidenceValue row))
-  reviewEvidence
+    (\row -> "Entry " <> evidenceKey row <> " in " <> J.field #evidence reviewState)
+    reviewEvidence
     :& #coverage := J.noul
-      "Do the supplied source spans show both the accepted maximum budget and how each page request is limited? Judge only the supplied spans."
+      ("Do entries in " <> J.field #evidence reviewState
+        <> " show both the accepted maximum budget and how each page request is limited? Judge only those entries.")
 
 reviewState = J.state
-  (#review_goal := ("Inspect retained-output byte bounds at commit eb73928" :: Text))
+  (#review_goal := ("Inspect retained-output byte bounds at commit eb73928" :: Text)
+    :& #evidence := sourceRows reviewEvidence)
+
+sourceRows :: [Evidence a] -> [(Text, [(Text, Text)])]
+sourceRows rows =
+  [ (evidenceKey row,
+      [ ("source", evidenceSource row)
+      , ("excerpt", evidenceExcerpt row)
+      ])
+  | row <- rows
+  ]
 
 runReviewCase
   :: Member Jev effects
