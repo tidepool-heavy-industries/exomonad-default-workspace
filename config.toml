@@ -39,6 +39,7 @@ checks = [
   "Project.BackgroundInvestigatorChecks.terminalFailure",
   "Project.BackgroundInvestigatorChecks.pendingProbe",
   "Project.RoutingChecks.routing",
+  "Project.RoutingChecks.reviewedCheckpoints",
   "Project.RoutingChecks.candidateHistory",
   "Project.RoutingChecks.notificationRetention",
   "Project.RoutingChecks.automaticReview",
