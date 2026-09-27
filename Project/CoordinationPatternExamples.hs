@@ -1,8 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeOperators #-}
 
 -- | Two clients of the same comparison question. They supply the facts and
 -- their own criterion; the question constructor has no effect or delivery.
@@ -19,8 +17,6 @@ import Data.Text (Text)
 import qualified Jev.Operators as J
 import Tidepool.Effects.Core (Jev)
 import Project.CoordinationPattern
-
-type ComparisonPacket = J.Packet ("update" J.::= J.Choice ComparisonAlternatives)
 
 -- | The original response remains available for distributions, model, usage,
 -- and diagnostics. A policy doubt stays separate from Jev transport failure.

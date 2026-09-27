@@ -9,7 +9,7 @@ module Project.CoordinationPattern
   ( SourceFact (..), HandledFact (..), ComparisonInput (..)
   , ComparisonCriteria (..), ComparisonResult (..)
   , prepareComparison, comparisonState, comparisonQuestion, comparisonPacket
-  , ComparisonAlternatives, settleComparison
+  , ComparisonAlternatives, ComparisonPacket, settleComparison
   ) where
 
 import Data.Text (Text)
@@ -72,11 +72,13 @@ comparisonState input = J.state
     :& #explicitly_handled := map renderHandled (comparisonHandled input)
   )
   where
+    renderIncoming :: SourceFact -> [(Text, Text)]
     renderIncoming fact =
       [ ("source", factSource fact)
       , ("claim", factClaim fact)
       , ("evidence", factEvidence fact)
       ]
+    renderHandled :: HandledFact -> [(Text, Text)]
     renderHandled fact =
       [ ("source", handledSource fact)
       , ("claim", handledClaim fact)
@@ -87,6 +89,8 @@ type ComparisonAlternatives =
   ("attention" J.::> ComparisonResult)
     J.:|: (("repetition" J.::> ComparisonResult)
       J.:|: ("unresolved" J.::> ComparisonResult))
+
+type ComparisonPacket = J.Packet ("update" J.::= J.Choice ComparisonAlternatives)
 
 comparisonQuestion :: ComparisonCriteria -> J.Q Value (J.Choice ComparisonAlternatives)
 comparisonQuestion criteria = J.choice
@@ -102,6 +106,7 @@ comparisonQuestion criteria = J.choice
       (Unresolved "evidence insufficient to compare update"))
 
 -- | Append with ':&' when the same evidence should answer another question.
+comparisonPacket :: ComparisonCriteria -> ComparisonPacket J.Questions
 comparisonPacket criteria = #update := comparisonQuestion criteria
 
 -- | Interpretation preserves the caller's policy and any policy doubt.
