@@ -1002,16 +1002,19 @@ publishCandidate own contract evidence = do
         ("integrated head " <> shortOid checked <> "; " <> checkDetail check) "report completion"
       notify' Info (Just oid) ("merged and green at " <> shortOid checked)
         RanHere index "no reply needed"
-    RedRolledBack checked before check -> do
+    RedPreserved before checked check -> do
       R.modify' (\current -> current { reviewCheck = Just check })
-      index <- record "check" (Just oid) RanHere "red_rolled_back"
-        ("checked " <> shortOid checked <> ", worktree back on " <> shortOid before
+      index <- record "check" (Just oid) RanHere "red_preserved"
+        ("previous integration head " <> shortOid before <> ", checked head " <> shortOid checked
+          <> " preserved in the integration worktree"
           <> ": " <> checkDetail check)
-        "request repair carrying the check output"
+        "request repair and alert the integration owner"
       notify' Alert (Just oid)
-        ("the integrated check failed at " <> shortOid checked <> " and was rolled back: "
+        ("the integrated check failed at " <> shortOid checked
+          <> "; the integration worktree remains there, the previous head was "
+          <> shortOid before <> ", and no publication occurred. Reconcile the source and publish only a green head: "
           <> checkDetail check)
-        RanHere index "the review is requesting the repair; confirm or take it over"
+        RanHere index "the review is requesting repair; the integration owner must reconcile before another named-branch publish"
       requestRepair own oid
-        ["the integrated check failed at " <> shortOid checked <> " (rolled back to "
-          <> shortOid before <> "): " <> checkDetail check]
+        ["the integrated check failed at the preserved integration head "
+          <> shortOid checked <> ": " <> checkDetail check]
