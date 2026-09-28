@@ -55,7 +55,7 @@ let task = Task
       , acceptance = criterion
       , acceptedDecisions = decisions
       }
-work <- unfoldWork group [workChild "component-a" (lunaLeadFrom label Medium projectHead task)] (notifyWork me (withCheckpoints (workMessage deliverySummary)))
+work <- unfoldWork group [workChild "component-a" (lunaLeadFrom label Medium currentCheckout task)] (notifyWork me (withCheckpoints (workMessage deliverySummary)))
 let [("component-a", lead, progress)] = batchMembers work
 let wave = batchRouter work
 ```

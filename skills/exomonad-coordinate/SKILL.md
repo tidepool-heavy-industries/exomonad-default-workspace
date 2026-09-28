@@ -89,7 +89,7 @@ Start from the accepted `Task` and a checked shared source. Bind the shared plan
 once. An ordinary local selector can make short, disjoint assignments without
 a new workspace workstream registry. This cell assumes `baseline :: GitOid` is bound
 to the source being split. Both branches use `lunaTaskFrom` with fresh context
-selected from their Tasks and the `projectHead` checkout seed. Put the shared
+selected from their Tasks and the `currentCheckout` seed of the local owner. Put the shared
 decisions and seam contracts they need in those Tasks. `lunaTaskFrom` selects
 the cheap `luna` alias with the effort you pass; `solTaskFrom` uses inherited
 context by default; crossing from Luna requires `withContext (selected taskContext)`.
@@ -126,7 +126,7 @@ let sliceTask slice = shared
       , ownedPaths = slicePaths slice
       , acceptance = sliceAcceptance slice
       }
-let sliceBranch slice = lunaTaskFrom (sliceLabel slice) Medium projectHead (sliceTask slice)
+let sliceBranch slice = lunaTaskFrom (sliceLabel slice) Medium currentCheckout (sliceTask slice)
 localBatch <- unfoldWork group
   [ workChild "interface" (sliceBranch InterfaceSlice)
   , workChild "consumer" (sliceBranch ConsumerSlice)

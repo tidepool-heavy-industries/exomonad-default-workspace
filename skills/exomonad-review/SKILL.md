@@ -18,6 +18,7 @@ nesting under your own (root has no allocated actor path to nest under):
 
 ```haskell
 (reviewer, reviewProgress) <- reviewCommit [label|parse-fix-review|] base commit "Round-trip tests for every item kind pass" ["src/parse.rs"]
+reviewQuestions <- followWork [("review", reviewer, reviewProgress)] (notifyWork me workQuestionsMessage)
 ```
 
 Inside a request whose `sessionInput :: Task` describes the work, with your
@@ -26,9 +27,15 @@ committed `candidate :: Candidate`:
 ```haskell
 (reviewer, reviewProgress) <- reviewCandidate sessionInput OwnerRepairs candidate
 let reviewerRef = responseActor reviewer
+reviewQuestions <- followWork [("review", reviewer, reviewProgress)] (notifyWork me workQuestionsMessage)
 ```
 
-Both return a retained reviewer plus progress; its settlement notice wakes you.
+Both retain the original reviewer response and a question-only collector.
+The request owns its settlement notice; the collector surfaces questions while
+review is still pending, without a duplicate settlement notice. Read
+`readWork reviewQuestions` for full questions and delivery receipts. After the
+result arrives, drain `finishWork reviewQuestions` and retain its exit before
+retiring the reviewer or starting the next attempt.
 `OwnerRepairs` means you repair findings; it avoids queuing a repair behind
 your own pending delivery.
 
@@ -65,7 +72,8 @@ Keep findings actionable: exact source, defect, consequence and required repair.
 Reference durable evidence rather than reproducing the plan or unaffected constraints.
 The tool's reply-submission result is sufficient; don't add an acknowledgment turn.
 
-After repair use `requestReview retryLabel revisedRequest`. It preserves the
+After repair use `requestReview retryLabel revisedRequest` and attach the same
+question-only collector to its returned handles in that admission cell. It preserves the
 review basis and admits a fresh reviewer at the new candidate. A retained reviewer's
 checkout does not change just because the request names another commit.
 For automatic counted check/review/repair, use `startReviewFlow` with a separate

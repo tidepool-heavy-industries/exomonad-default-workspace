@@ -47,11 +47,14 @@ skills = do
   void $ example owner "exomonad-review" 0
   commitReviewer <- activation
   check "root review-by-commit forks a fresh Luna reviewer with no parent path" (checkModel commitReviewer == Just "gpt-6-luna")
+  void $ turn (checkActor commitReviewer) "respond (Produced (Repair (reviewInput sessionInput) []))"
+  void $ turn owner "finishWork reviewQuestions"
   void $ example (checkActor worker) "exomonad-review" 1
   reviewer <- activation
   void $ turn (checkActor reviewer) "let checks = [\"fixture review\"] :: [Text]\nlet scope = \"skill composition only\" :: Text"
   replied <- example (checkActor reviewer) "exomonad-review" 2
   check "successful reply explicitly reports submission" ("Reply submitted." `Text.isInfixOf` output replied)
+  void $ turn (checkActor worker) "finishWork reviewQuestions"
   void $ turn (checkActor worker) "respond (Produced candidate)"
   final <- awaitOutput owner "state <- readWork router\ninspectFull (workSnapshotSummary candidateOutcomeSummary state)" (not . Text.isInfixOf "result pending")
   check "compact snapshot retains terminal candidate and gates" (baseline `Text.isInfixOf` final && "product acceptance remains" `Text.isInfixOf` final)
@@ -122,6 +125,14 @@ skills = do
   check "the cleanup skill inspects a typed plan without retiring anything"
     ("Cleanup" `Text.isInfixOf` lastOutput planned)
 
+  void $ example owner "exomonad-fork" 1
+  parserChild <- activation
+  storeChild <- activation
+  testChild <- activation
+  check "primitive fork example admits its three ready obligations"
+    (all ((== Just "gpt-6-luna") . checkModel) [parserChild, storeChild, testChild])
+  mapM_ (\child -> void $ turn (checkActor child) "respond (Blocked \"fixture complete\" [] :: Outcome Candidate)") [parserChild, storeChild, testChild]
+  void $ turn owner "finishWork primitiveQuestions"
   checkNotebookForms owner
 
 -- Run the pure authoring forms independently of the worker/review examples.

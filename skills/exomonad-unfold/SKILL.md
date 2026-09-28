@@ -26,8 +26,8 @@ let consumerLabel = [label|consumer-tests|]
 let domainPlan = "Add the shared item type and its tests." :: Text
 let consumerPlan = "Update the readers of that type." :: Text
 workers <- unfold group $
-  (,) <$> child @(Outcome Candidate) (coding projectHead (assignment domainLabel domainPlan))
-      <*> child @(Outcome Candidate) (withEffort Medium (coding projectHead (assignment consumerLabel consumerPlan)))
+  (,) <$> child @(Outcome Candidate) (coding currentCheckout (assignment domainLabel domainPlan))
+      <*> child @(Outcome Candidate) (withEffort Medium (coding currentCheckout (assignment consumerLabel consumerPlan)))
 let sharedAfterUnfold = ("ready" :: Text)
 ```
 

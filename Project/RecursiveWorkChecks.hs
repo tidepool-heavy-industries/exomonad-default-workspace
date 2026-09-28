@@ -9,7 +9,8 @@ import Tidepool.Check
 import Project.Checks (script)
 
 -- Scripted model replies exercise the actual resident fork/collector boundary.
--- Findings stay findings throughout three levels; no fabricated commits exist.
+-- Findings stay findings throughout three levels; scaffold commits test source
+-- inheritance and never masquerade as Candidate results.
 nestedBatches :: Member RecipeCheck effects => Eff effects ()
 nestedBatches = do
   owner <- root
@@ -19,12 +20,18 @@ nestedBatches = do
   sibling <- activation
   pending <- turn owner "early <- finishWorkBatch work\ninspectFull (case early of { Left names -> length names == 2; _ -> False })"
   check "collector cannot close over pending original requests" (lastOutput pending == "True")
-  setup (checkActor component) base "subcomponents"
+  componentSource <- checkpoint (checkActor component) "component-scaffold.txt" "component contract\n" "component scaffold fixture"
+  setup (checkActor component) componentSource "subcomponents"
   subcomponent <- activation
   peer <- activation
-  setup (checkActor subcomponent) base "microtasks"
+  inheritedComponent <- git (checkActor subcomponent) ["rev-parse", "HEAD"]
+  check "subcomponent starts from its local owner scaffold, not root HEAD" (inheritedComponent == componentSource && componentSource /= base)
+  subcomponentSource <- checkpoint (checkActor subcomponent) "subcomponent-scaffold.txt" "microtask contract\n" "subcomponent scaffold fixture"
+  setup (checkActor subcomponent) subcomponentSource "microtasks"
   leaf1 <- activation
   leaf2 <- activation
+  inheritedSubcomponent <- git (checkActor leaf1) ["rev-parse", "HEAD"]
+  check "microtask starts from the next local scaffold" (inheritedSubcomponent == subcomponentSource && subcomponentSource /= componentSource)
   void $ turn (checkActor leaf1) "respond (Produced (\"left evidence\" :: Text))"
   void $ turn (checkActor leaf2) "respond (Produced (\"right evidence\" :: Text))"
   finish (checkActor subcomponent)
@@ -32,7 +39,7 @@ nestedBatches = do
   void $ turn (checkActor peer) "respond (Produced (\"independent evidence\" :: Text))"
   finish (checkActor component)
   -- A second local batch is authored only after the first result is known.
-  setup (checkActor component) base "followup"
+  setup (checkActor component) componentSource "followup"
   later1 <- activation
   later2 <- activation
   void $ turn (checkActor later1) "respond (Produced (\"followup one\" :: Text))"

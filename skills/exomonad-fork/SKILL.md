@@ -69,10 +69,13 @@ let testTask = task [label|contract-tests|] "Write failing tests for the parse/s
   <$> childWithProgress @WorkProgress @(Outcome Candidate) (lunaTaskFrom [label|parser|] Medium currentCheckout parserTask)
   <*> childWithProgress @WorkProgress @(Outcome Candidate) (lunaTaskFrom [label|store|] Medium currentCheckout storeTask)
   <*> childWithProgress @WorkProgress @(Outcome Candidate) (lunaTaskFrom [label|contract-tests|] Low currentCheckout testTask)
+primitiveQuestions <- followWork [("parser", parser, parserProgress), ("store", store, storeProgress), ("tests", tests, testsProgress)] (notifyWork me workQuestionsMessage)
 ```
 
 End the admission cell promptly; continue independent work or end the turn when
-waiting is all that remains. Each child's notice wakes you. Before merging a
+waiting is all that remains. The requests own settlement notices; the collector
+surfaces pending questions without duplicate final notices. Read it for question
+details and drain `finishWork primitiveQuestions` after all results settle. Before merging a
 candidate, refuse paths it does not own:
 
 ```haskell
