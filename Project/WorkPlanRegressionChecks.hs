@@ -33,7 +33,8 @@ duplicateReview = do
   owner <- root
   source <- git owner ["rev-parse", "HEAD"]
   started <- turn owner (Text.unlines
-    [ "(plan, begun) <- do"
+    [ "import qualified Project.WorkPlan as WP"
+    , "(plan, begun) <- do"
     , "  let sourceHead = " <> gitOidLiteral source
     , "  let work = task [label|review-correlation|] \"Review one candidate twice\" [\"review-flow.txt\"] \"settle both reviews\" sourceHead"
     , "  Right firstTree <- createWorktree (fromCurrentRepository \"review-correlate-a\")"
@@ -41,7 +42,7 @@ duplicateReview = do
     , "  Right coordinatorTree <- createWorktree (fromCurrentRepository \"review-correlate-plan\")"
     , "  let firstSpec = ReviewSpec work (worktreeId firstTree) defaultReviewFlowPolicy []"
     , "  let secondSpec = ReviewSpec work (worktreeId secondTree) defaultReviewFlowPolicy []"
-    , "  let graph = do { developed <- develop (ForkWorker work (lunaWorker [label|review-correlate-child|] Medium currentCheckout)); parallel (review firstSpec developed) (review secondSpec developed) }"
+    , "  let graph = do { developed <- develop (ForkWorker work (lunaWorker [label|review-correlate-child|] Medium currentCheckout)); parallel (WP.review firstSpec developed) (WP.review secondSpec developed) }"
     , "  plan <- coordinator (worktreeId coordinatorTree) me [] graph Nothing"
     , "  begun <- R.call (beginPlan (R.client plan)) ()"
     , "  pure (plan, begun)"
@@ -75,6 +76,7 @@ parallelVerification = do
   source <- git owner ["rev-parse", "HEAD"]
   started <- turn owner (Text.unlines
     [ "import qualified Project.Merge as M"
+    , "import qualified Project.WorkPlan as WP"
     , "(plan, merger, begun) <- do"
     , "  let sourceHead = " <> gitOidLiteral source
     , "  let work = task [label|verify-correlation|] \"Review and verify one candidate\" [\"review-flow.txt\"] \"retain both check outcomes\" sourceHead"
@@ -87,7 +89,7 @@ parallelVerification = do
     , "  let integrateSpec = IntegrationSpec (M.MergeTarget merger) \"verify candidate\" \"publish checked candidate\""
     , "  let leftSpec = Verification [checkFor \"product-left\"] (\\_ _ -> Right (\"left\" :: Text))"
     , "  let rightSpec = Verification [checkFor \"product-right\"] (\\_ _ -> Right (\"right\" :: Text))"
-    , "  let graph = do { developed <- develop (ForkWorker work (lunaWorker [label|verify-correlate-child|] Medium currentCheckout)); reviewed <- review reviewSpec developed; checked <- integrate integrateSpec reviewed; (left, right) <- parallel (verify leftSpec checked) (verify rightSpec checked); Pure (acceptedValue left, acceptedValue right) }"
+    , "  let graph = do { developed <- develop (ForkWorker work (lunaWorker [label|verify-correlate-child|] Medium currentCheckout)); reviewed <- WP.review reviewSpec developed; checked <- integrate integrateSpec reviewed; (left, right) <- parallel (verify leftSpec checked) (verify rightSpec checked); Pure (acceptedValue left, acceptedValue right) }"
     , "  plan <- coordinator (worktreeId coordinatorTree) me [] graph Nothing"
     , "  begun <- R.call (beginPlan (R.client plan)) ()"
     , "  pure (plan, merger, begun)"
