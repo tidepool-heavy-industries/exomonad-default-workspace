@@ -150,7 +150,7 @@ missingIncorporation = do
   void $ awaitOutput owner
     "do { Just state <- R.call (planView (R.client plan)) (); work <- readWork (activeRouter (head (viewedDevelopments state))); pure (inspectFull (collectedWork work)) }"
     (Text.isInfixOf "accepted-baseline")
-  after <- checkpoint owner "plans/work-plan.md" "Accepted baseline\n" "accept baseline without child incorporation"
+  after <- checkpoint owner "plans/work-plan.md" "Accepted baseline for negative case\n" "accept baseline without child incorporation"
   accepted <- turn owner (Text.unlines
     [ "(change, accepted) <- do"
     , "  let afterOid = " <> gitOidLiteral after
