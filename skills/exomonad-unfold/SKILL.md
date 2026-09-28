@@ -3,6 +3,11 @@ name: exomonad-unfold
 description: Admit several Exomonad children in one applicative unfold, join their settlements in one watch, and read a child's committed work from the parent's own Git view. Load when decomposing work across children and inspecting what they produced.
 ---
 
+The execution workflow is recursive scaffold/delegate/integrate, using
+`lunaLead`/`lunaTask` and `unfoldWork` for each ready frontier. This skill explains
+the underlying admission and join primitives for custom Haskell compositions.
+See `RECURSIVE-WORK.md` for the canonical procedure.
+
 `unfold` admits persistent child actor applications and returns their handles now. The
 children start after the entire enclosing cell finishes, and they inherit that
 cell's final committed bindings plus the conversation through the real tool

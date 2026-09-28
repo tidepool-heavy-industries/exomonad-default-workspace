@@ -101,8 +101,10 @@ Previously distributed endpoints still name their original incarnation.
 For handler-owned requests, `requestWithProgressInto` runs your retention callback
 with the exact typed response/progress handles before submission. Send those handles
 to a route on `Self`; that route can create a collector using its receiving
-incarnation's endpoints. See `checks/review-continuation.hs` and
-`plans/continuation.md` for the executable review/repair loop. Do not reconstruct
+incarnation's endpoints. `checks/review-continuation.hs` is a low-level regression
+fixture for this retention boundary; its retained reviewer requires explicit
+checkout preparation. Routine review uses `startReviewFlow`, described in
+`plans/continuation.md`, which owns exact-source admission. Do not reconstruct
 response handles from labels or repeat submission after uncertain failure.
 
 Keep the integration actor alive through useful repairs. When done:

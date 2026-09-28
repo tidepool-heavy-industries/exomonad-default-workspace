@@ -324,7 +324,7 @@ reviewedCheckpoints = do
   check "a requested candidate without the review checkout HEAD is refused"
     ("CheckpointSourceRejected" `Text.isInfixOf` output mismatchedSource)
   void $ turn owner
-    "(alteredReview, _) <- reviewAgain (responseActor reviewer) [label|altered-review|] reviewRequest"
+    "(alteredReview, _) <- requestWithProgress @WorkProgress @(Outcome ReviewDecision) (responseActor reviewer) (assignment [label|altered-review|] reviewRequest)"
   void activation
   void $ turn (checkActor reviewerActor)
     "respond (Produced (Accepted (ReviewedCandidate (reviewBasis sessionInput) ((reviewInput sessionInput) { checkedCommands = [\"different\"] }) [] \"accepted\")))"
@@ -332,7 +332,7 @@ reviewedCheckpoints = do
   check "a reviewer verdict for another full candidate is refused"
     ("CheckpointCandidateMismatch" `Text.isInfixOf` output mismatchedCandidate)
   void $ turn owner
-    "(blockedReview, _) <- reviewAgain (responseActor reviewer) [label|blocked-review|] reviewRequest"
+    "(blockedReview, _) <- requestWithProgress @WorkProgress @(Outcome ReviewDecision) (responseActor reviewer) (assignment [label|blocked-review|] reviewRequest)"
   void activation
   void $ turn (checkActor reviewerActor)
     "respond (Blocked \"review blocked\" [\"missing source proof\"] :: Outcome ReviewDecision)"
@@ -340,7 +340,7 @@ reviewedCheckpoints = do
   check "a blocked review cannot become a reviewed checkpoint"
     ("CheckpointBlocked" `Text.isInfixOf` output blocked)
   void $ turn owner
-    "(repairReview, _) <- reviewAgain (responseActor reviewer) [label|repair-review|] reviewRequest"
+    "(repairReview, _) <- requestWithProgress @WorkProgress @(Outcome ReviewDecision) (responseActor reviewer) (assignment [label|repair-review|] reviewRequest)"
   void activation
   void $ turn (checkActor reviewerActor)
     "respond (Produced (Repair (reviewInput sessionInput) [\"repair requested\"]))"
@@ -348,7 +348,7 @@ reviewedCheckpoints = do
   check "a review requesting repair cannot become a reviewed checkpoint"
     ("CheckpointNeedsRepair" `Text.isInfixOf` output needsRepair)
   void $ turn owner
-    "(dirtyReview, _) <- reviewAgain (responseActor reviewer) [label|dirty-review|] reviewRequest"
+    "(dirtyReview, _) <- requestWithProgress @WorkProgress @(Outcome ReviewDecision) (responseActor reviewer) (assignment [label|dirty-review|] reviewRequest)"
   void activation
   writeFile (checkActor reviewerActor) "README.md" "dirty review checkout\n"
   void $ turn (checkActor reviewerActor)
