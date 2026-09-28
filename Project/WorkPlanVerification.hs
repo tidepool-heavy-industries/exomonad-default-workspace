@@ -23,8 +23,9 @@ import GHC.Generics (Generic)
 import qualified Tidepool.Actor as Actor
 import qualified Tidepool.Actor.Record as R
 import Tidepool.Actors.Exomonad
-  ( (:-), Actor, Commands, WorktreeAllocation, GitOid, createWorktree
+  ( (:-), Actor, WorktreeAllocation, GitOid, createWorktree
   , fromRef, worktreeId, renderGitOid )
+import Tidepool.Effects.Core (Commands)
 import Tidepool.Effects.Row (knownEffects)
 import Tidepool.Worktree (renderWorktreeError)
 import Project.CheckResults (CheckSetupIssue, CheckState)
