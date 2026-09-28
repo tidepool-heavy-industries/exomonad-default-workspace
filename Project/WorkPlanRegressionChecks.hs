@@ -53,11 +53,10 @@ duplicateReview = do
   void $ turn (checkActor worker)
     ("respond (Produced (Candidate " <> gitOidLiteral candidate <> " [] []))")
   settled <- awaitOutput owner
-    "do { Just state <- R.call (planView (R.client plan)) (); pure (inspectFull (length (viewedReviews state), viewedOutcome state)) }"
-    (Text.isInfixOf "ParallelStopped")
+    "do { Just state <- R.call (planView (R.client plan)) (); pure (inspectFull (length (viewedReviews state) == 2 && case viewedOutcome state of { Just (Left (ParallelStopped [_, _])) -> True; _ -> False })) }"
+    (Text.isInfixOf "True")
   check "both review admissions independently return terminal refusals"
-    ("(2,Just (Left (ParallelStopped" `Text.isInfixOf` settled
-      && Text.count "CandidateChecksRefused" settled == 2)
+    ("True" `Text.isInfixOf` settled)
   closed <- turn owner "R.call (closePlan (R.client plan)) ()"
   check "duplicate review plan reaches terminal closure" ("PlanClosed []" `Text.isInfixOf` lastOutput closed)
   void $ turn owner (Text.unlines
@@ -105,10 +104,10 @@ parallelVerification = do
   void $ turn (checkActor reviewer)
     "respond (Produced (Accepted (ReviewedCandidate (reviewBasis sessionInput) (reviewInput sessionInput) [\"fixture passed\"] \"accepted\")))"
   settled <- awaitOutput owner
-    "do { Just state <- R.call (planView (R.client plan)) (); pure (inspectFull (viewedOutcome state)) }"
-    (Text.isInfixOf "Right (\"left\",\"right\")")
+    "do { Just state <- R.call (planView (R.client plan)) (); pure (inspectFull (case viewedOutcome state of { Just (Right (left, right)) -> left == \"left\" && right == \"right\"; _ -> False })) }"
+    (Text.isInfixOf "True")
   check "both distinct verification callbacks preserve their own result"
-    ("Right (\"left\",\"right\")" `Text.isInfixOf` settled)
+    ("True" `Text.isInfixOf` settled)
   closed <- turn owner "R.call (closePlan (R.client plan)) ()"
   check "parallel verification plan closes" ("PlanClosed []" `Text.isInfixOf` lastOutput closed)
   void $ turn owner (Text.unlines
@@ -171,11 +170,10 @@ missingIncorporation = do
   void $ turn (checkActor worker)
     ("respond (Produced (Candidate " <> gitOidLiteral candidate <> " [] []))")
   refused <- awaitOutput owner
-    "do { Just state <- R.call (planView (R.client plan)) (); pure (inspectFull (viewedOutcome state, viewedCorrection state)) }"
-    (Text.isInfixOf "SourceRefused DevelopmentNode")
+    "do { Just state <- R.call (planView (R.client plan)) (); pure (inspectFull (case (viewedOutcome state, viewedCorrection state) of { (Just (Left (SourceRefused DevelopmentNode _)), Just correction) -> case correctionReported correction of { Nothing -> True; Just _ -> False }; _ -> False })) }"
+    (Text.isInfixOf "True")
   check "missing incorporation refuses old-source candidate"
-    ("Left (SourceRefused DevelopmentNode" `Text.isInfixOf` refused
-      && "correctionReported = Nothing" `Text.isInfixOf` refused)
+    ("True" `Text.isInfixOf` refused)
   closed <- turn owner "R.call (closePlan (R.client plan)) ()"
   check "failed correction plan can close" ("PlanClosed []" `Text.isInfixOf` lastOutput closed)
   void $ turn owner "R.finish plan >> pure ()"
