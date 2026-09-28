@@ -142,12 +142,14 @@ the **same** cell item; a signature alone installs nothing.
 import GHC.Generics (Generic)
 data Tally mode = Tally { tallyState :: mode :- State [Text], noted :: mode :- Call Text NoReply, noteCount :: mode :- Call () (R.Reply Int) } deriving Generic
 type TallyEffects = LocalEffects Tally '[Replies, Actor, Notifications]
-let recordNote :: Text -> Handler [Text] TallyEffects (); recordNote note = modify' (++ [note])
-let tallyDefinition = R.definition "tally" (Actor.Selected knownEffects) Tally
+recordNote :: Text -> Handler [Text] TallyEffects ()
+recordNote note = modify' (++ [note])
+tallyDefinition :: ActorSpec Tally TallyEffects
+tallyDefinition = R.definition "tally" (Actor.Selected knownEffects) Tally
       { tallyState = []
       , noted = recordNote
       , noteCount = \() -> gets length
-      } :: ActorSpec Tally TallyEffects
+      }
 tally <- R.start tallyDefinition
 R.send (noted (R.client tally)) "first finding"
 R.call (noteCount (R.client tally)) ()

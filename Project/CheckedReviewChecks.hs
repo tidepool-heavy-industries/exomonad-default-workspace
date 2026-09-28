@@ -38,7 +38,7 @@ continuation = do
     (checkActor repairing == checkActor implementer)
   void $ turn (checkActor repairing) "let question = Question \"repair-scope\" (DesignQuestion \"plans/component.md\" (taskSource (repairAssignment sessionInput)) \"confirm repair scope\" [] [] [])\nreportProgress (WorkProgress [] [question])"
   repairQuestion <- awaitOutput owner
-    "state <- R.call (reviewSnapshot (R.client flow)) ()\ncase flowRepairCollectors state of { [collector] -> do { seen <- readWork collector; inspectFull (length (workNotices seen) == 1 && any (not . null . workQuestions . sourceProgress) (collectedWork seen)) }; _ -> inspectFull False }"
+    "do { state <- R.call (reviewSnapshot (R.client flow)) (); case flowRepairCollectors state of { [collector] -> do { seen <- readWork collector; pure (length (workNotices seen) == 1 && any (not . null . workQuestions . sourceProgress) (collectedWork seen)) }; _ -> pure False } }"
     (== "True")
   check "a pending repair question retains its owner notification receipt" (repairQuestion == "True")
   pending <- turn owner "state <- R.call (reviewSnapshot (R.client flow)) ()\ninspectFull (flowRepairCount state == 1 && null (flowReviewerRequests state) && length (flowCheckReports state) == 1)"
@@ -55,7 +55,7 @@ continuation = do
     ("Flow check evidence:" `Text.isInfixOf` checkContext reviewer && "recovery" `Text.isInfixOf` checkContext reviewer)
   void $ turn (checkActor reviewer) "let question = Question \"review-scope\" (DesignQuestion \"plans/component.md\" (reviewBase (reviewBasis sessionInput)) \"confirm review scope\" [] [] [])\nreportProgress (WorkProgress [] [question])"
   reviewQuestion <- awaitOutput owner
-    "state <- R.call (reviewSnapshot (R.client flow)) ()\ncase flowReviewerCollectors state of { [collector] -> do { seen <- readWork collector; inspectFull (length (workNotices seen) == 1 && any (not . null . workQuestions . sourceProgress) (collectedWork seen)) }; _ -> inspectFull False }"
+    "do { state <- R.call (reviewSnapshot (R.client flow)) (); case flowReviewerCollectors state of { [collector] -> do { seen <- readWork collector; pure (length (workNotices seen) == 1 && any (not . null . workQuestions . sourceProgress) (collectedWork seen)) }; _ -> pure False } }"
     (== "True")
   check "a pending reviewer question retains its owner notification receipt" (reviewQuestion == "True")
   void $ turn (checkActor reviewer) "respond (Produced (Repair (reviewInput sessionInput) [\"another repair\"]))"

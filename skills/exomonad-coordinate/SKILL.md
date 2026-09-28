@@ -111,6 +111,10 @@ slicePaths :: WorkSlice -> [Text]
 slicePaths InterfaceSlice = ["src/interface.rs", "tests/interface.rs"]
 slicePaths ConsumerSlice = ["src/consumer.rs", "tests/consumer.rs"]
 
+sliceAcceptance :: WorkSlice -> Text
+sliceAcceptance InterfaceSlice = "The committed interface contract has usable semantics and focused interface tests pass"
+sliceAcceptance ConsumerSlice = "The consumer uses the committed interface and its focused tests pass; the parent owns combined product acceptance"
+
 let group = batch "corpus" "fanout"
 let shared = (task [label|feature|] "Deliver the feature through its real consumer" [] "Integrated behavior and focused checks" baseline)
       { taskGroup = group
@@ -120,6 +124,7 @@ let shared = (task [label|feature|] "Deliver the feature through its real consum
 let sliceTask slice = shared
       { obligation = sliceName slice <> ": implement and check the assigned slice"
       , ownedPaths = slicePaths slice
+      , acceptance = sliceAcceptance slice
       }
 let sliceBranch slice = lunaTaskFrom (sliceLabel slice) Medium projectHead (sliceTask slice)
 localBatch <- unfoldWork group

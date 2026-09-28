@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Project.SkillChecks (skills, reviewProvenance) where
+module Project.SkillChecks (skills, notebookForms, reviewProvenance) where
 
 import Prelude hiding (readFile, writeFile)
 import Control.Monad (void)
@@ -122,6 +122,14 @@ skills = do
   check "the cleanup skill inspects a typed plan without retiring anything"
     ("Cleanup" `Text.isInfixOf` lastOutput planned)
 
+  checkNotebookForms owner
+
+-- Run the pure authoring forms independently of the worker/review examples.
+notebookForms :: Member RecipeCheck effects => Eff effects ()
+notebookForms = root >>= checkNotebookForms
+
+checkNotebookForms :: Member RecipeCheck effects => CheckActor -> Eff effects ()
+checkNotebookForms owner = do
   -- The project-free record definition: no Project.Actors wrapper, the row
   -- named in the cell and pinned by a signature on the definition.
   tallied <- example owner "exomonad-define-actors" 3
