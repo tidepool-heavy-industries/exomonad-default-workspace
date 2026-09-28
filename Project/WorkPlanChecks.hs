@@ -3,12 +3,25 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 
-module Project.WorkPlanChecks (structural, correction) where
+module Project.WorkPlanChecks (structural, correction, regressions, complete) where
 
 import Control.Monad (void)
 import Control.Monad.Freer (Eff, Member)
 import qualified Data.Text as Text
+import Prelude hiding (readFile)
+import qualified Project.WorkPlanRegressionChecks as Regression
 import Tidepool.Check
+
+complete :: Member RecipeCheck effects => Eff effects ()
+complete = do
+  correction
+  regressions
+
+regressions :: Member RecipeCheck effects => Eff effects ()
+regressions = do
+  Regression.duplicateReview
+  Regression.parallelVerification
+  Regression.missingIncorporation
 
 -- The real record interpreter executes a nested component and a typed
 -- parallel join. No model response is needed for these pure leaves.
@@ -26,10 +39,11 @@ structural = do
     , "  plan <- coordinator (worktreeId tree) me [] graph Nothing"
     , "  begun <- R.call (beginPlan (R.client plan)) ()"
     , "  pure (plan, begun)"
+    , "inspectFull begun"
     ])
   check "authorized owner starts the coordinator" ("PlanStarted" `Text.isInfixOf` lastOutput started)
   joined <- awaitOutput owner
-    "do { view <- R.call (planView (R.client plan)) (); inspectFull (viewedOutcome <$> view) }"
+    "do { view <- R.call (planView (R.client plan)) (); pure (inspectFull (viewedOutcome <$> view)) }"
     (Text.isInfixOf "prefix:left:right")
   check "sequential continuation receives the typed parallel result"
     ("Right \"prefix:left:right\"" `Text.isInfixOf` joined)
@@ -53,12 +67,13 @@ correction = do
     , "  plan <- coordinator (worktreeId tree) me [] graph Nothing"
     , "  begun <- R.call (beginPlan (R.client plan)) ()"
     , "  pure (plan, beforeOid, begun)"
+    , "inspectFull begun"
     ])
   check "coordinator admits a real Luna development node" ("PlanStarted" `Text.isInfixOf` lastOutput started)
   worker <- activation
   check "the development worker runs on Luna" (checkModel worker == Just "gpt-6-luna")
   void $ awaitOutput owner
-    "do { Just planState <- R.call (planView (R.client plan)) (); inspectFull (length (viewedDevelopments planState)) }"
+    "do { Just planState <- R.call (planView (R.client plan)) (); pure (inspectFull (length (viewedDevelopments planState))) }"
     (Text.isInfixOf "1")
   void $ turn owner
     "response <- do { Just planState <- R.call (planView (R.client plan)) (); pure (activeResponse (head (viewedDevelopments planState))) }"
@@ -69,7 +84,7 @@ correction = do
     , "  reportProgress (WorkProgress [] [question])"
     ])
   void $ awaitOutput owner
-    "do { Just planState <- R.call (planView (R.client plan)) (); workState <- readWork (activeRouter (head (viewedDevelopments planState))); inspectFull (collectedWork workState) }"
+    "do { Just planState <- R.call (planView (R.client plan)) (); workState <- readWork (activeRouter (head (viewedDevelopments planState))); pure (inspectFull (collectedWork workState)) }"
     (Text.isInfixOf "accepted-baseline")
   after <- checkpoint owner "plans/work-plan.md" "Accepted baseline\n" "accept work-plan baseline"
   refused <- turn owner (Text.unlines
@@ -81,6 +96,7 @@ correction = do
     , "  let change = BaselineChange beforeOid afterOid amendment decision"
     , "  staleResult <- R.call (correctQuestion (R.client plan)) (response, Question \"stale\" (questionDetails question), change, [\"read baseline\"])"
     , "  pure (afterOid, question, amendment, change, staleResult)"
+    , "inspectFull staleResult"
     ])
   check "stale question is refused before request update"
     ("question is not current" `Text.isInfixOf` lastOutput refused)
@@ -109,16 +125,18 @@ correction = do
       , "  let amendment = PlanAmendment before after [\"plans/work-plan.md\"] \"accept baseline\" [\"incorporation\"] [\"owner check\"]"
       , "  R.send (incorporationRoute assigned) (Incorporated amendment after [\"read baseline\"])"
       ])
-  reported <- turn owner
-    "do { Just planState <- R.call (planView (R.client plan)) (); pending <- pollResponse response; inspectFull (pending, viewedCorrection planState) }"
+  reported <- awaitOutput owner
+    "do { Just planState <- R.call (planView (R.client plan)) (); pending <- pollResponse response; pure (inspectFull (pending, viewedCorrection planState)) }"
+    (\observed -> "ResponsePending" `Text.isInfixOf` observed
+      && "correctionReported = Just" `Text.isInfixOf` observed)
   check "worker report arrives while the original request remains pending"
-    ("ResponsePending" `Text.isInfixOf` lastOutput reported
-      && "correctionReported = Just" `Text.isInfixOf` lastOutput reported)
+    ("ResponsePending" `Text.isInfixOf` reported
+      && "correctionReported = Just" `Text.isInfixOf` reported)
   candidate <- checkpoint (checkActor worker) "work-plan.txt" "component complete\n" "work-plan candidate"
   void $ turn (checkActor worker)
     ("respond (Produced (Candidate " <> gitOidLiteral candidate <> " [] [\"review remains\"]))")
   settled <- awaitOutput owner
-    "do { Just planState <- R.call (planView (R.client plan)) (); inspectFull (fmap (either (const \"failed\") (renderGitOid . candidateCommit . developedCandidate)) (viewedOutcome planState)) }"
+    "do { Just planState <- R.call (planView (R.client plan)) (); pure (inspectFull (fmap (either (const \"failed\") (renderGitOid . candidateCommit . developedCandidate)) (viewedOutcome planState))) }"
     (Text.isInfixOf candidate)
   check "normal settlement preserves the exact candidate after correction"
     (candidate `Text.isInfixOf` settled)

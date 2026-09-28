@@ -6,7 +6,14 @@ request, progress, receipt, and checked candidate. `review` consumes that exact
 value; `integrate` consumes its review proof; `verify` consumes the checked
 publication. The coordinator interprets nodes as resident actor work and keeps
 the original response handles. `Project.WorkPlanChecks.structural` is the
-compiled starting example for composition and the typed parallel join.
+compiled starting example for composition and the typed parallel join. Each
+Review and Verify admission has its own completion ticket, so parallel branches
+and repeated reviews of one candidate resume their own continuations. Verify
+checks run in a fresh managed checkout of the exact published commit.
+
+In notebook cells, use `import qualified Project.WorkPlan as WP` and
+`WP.review`; the default prelude also exports a lens function named `review`.
+`Project.WorkPlanRegressionChecks.duplicateReview` compiles this form.
 
 Start `Project.WorkPlanCoordinator.coordinator` with an unbound managed checkout,
 the owner, checkpoint tokens whose custody this plan takes, the plan, and an
@@ -25,7 +32,9 @@ original response once. `observeCorrection` records presentation separately;
 the worker sends `Incorporation` on its typed route while its request stays
 pending. Reported checks are worker evidence, not executed verification. A
 refused or uncertain update remains recorded and never starts replacement
-work.
+work. A corrected development advances only after the update was presented,
+the exact incorporation report was accepted without a refusal, and the
+submitted candidate descends from the accepted baseline commit.
 
 After terminal outcome, `closePlan` releases owned checkpoint tokens and
 finishes routing and join actors. It returns `PlanClosePending` while work is

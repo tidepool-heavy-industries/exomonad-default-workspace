@@ -14,6 +14,7 @@
 -- own their respective histories and checks.
 module Project.WorkPlanCoordinator
   ( Coordinator (beginPlan, planView, answerQuestion, correctQuestion, observeCorrection, reportIncorporation, closePlan)
+  , PlanState
   , PlanView (..), ActiveDevelopment (..), CoordinatorStart (..), QuestionReply (..)
   , PlanClose (..), CorrectionReply (..), CorrectionState (..)
   , coordinator
@@ -23,17 +24,20 @@ import Control.Monad.Freer (Eff, Member)
 import Control.Monad (void)
 import Data.Text (Text)
 import qualified Data.Text as Text
+import qualified Tidepool.Command as Cmd
+import Tidepool.Actors.Worktree (boundWorktree)
 import GHC.Generics (Generic)
 import qualified Tidepool.Actor as Actor
 import qualified Tidepool.Actor.Record as R
 import Tidepool.Actors.Exomonad
-import Tidepool.Effects.Core (Actor)
+import Tidepool.Effects.Core (Actor, WorktreeHandle (..))
 import Tidepool.Effects.Row (knownEffects)
+import Tidepool.Worktree (WorktreeReceipt (..), renderGitOid, renderWorktreeId)
 import Project.CheckResults (CheckState, finishChecks)
 import Project.BaselineIncorporation
   ( BaselineChange (..), Affected (..), validateBaselineFor, incorporationUpdate )
 import Project.FocusedGateExample
-  ( PlanReport (..), planPassed, planSummary, startCheckPlanInto )
+  ( PlanReport (..), planPassed, planSummary )
 import qualified Project.FocusedGateExample as Focused
 import qualified Project.Merge as Merge
 import Project.ReviewFlow
@@ -45,6 +49,8 @@ import Project.Routing
 import Project.Types hiding (reviewChecks)
 import Project.Work (candidateAtSubmission, decisionContext, projectPrompt)
 import Project.WorkPlan
+import Project.WorkPlanVerification
+  ( VerificationRunner, startExactVerification )
 
 data CoordinatorStart = PlanStarted | PlanAlreadyStarted | PlanUnauthorized
   deriving (Show, Eq)
@@ -87,8 +93,9 @@ data ActiveDevelopment = ActiveDevelopment
 
 data ActiveReview root where
   ActiveReview
-    :: RequestId
+    :: Int
     -> R.ActorHandle ReviewFlow
+    -> R.ActorHandle (CompletionRelay ReviewCompletion)
     -> Developed
     -> (Reviewed -> WorkPlan result)
     -> (Either PlanFailure result -> PlanHandler root ())
@@ -96,7 +103,10 @@ data ActiveReview root where
 
 data ActiveVerification root where
   ActiveVerification
-    :: Verification value
+    :: Int
+    -> R.ActorHandle (CompletionRelay CheckState)
+    -> R.ActorHandle VerificationRunner
+    -> Verification value
     -> CheckedSource
     -> Focused.PlanStart
     -> (AcceptedSource value -> WorkPlan result)
@@ -105,14 +115,16 @@ data ActiveVerification root where
 
 data PlanState root = PlanState
   { planOwner :: AgentRef
+  , planNamespace :: Text
   , planInitial :: WorkPlan root
   , planStarted :: Bool
   , planOutcome :: Maybe (Either PlanFailure root)
   , planDevelopments :: [ActiveDevelopment]
   , planReviews :: [ActiveReview root]
   , planHandledDevelopments :: [RequestId]
-  , planHandledReviews :: [RequestId]
-  , planVerification :: Maybe (ActiveVerification root)
+  , planHandledReviews :: [Int]
+  , planVerifications :: [ActiveVerification root]
+  , planNextTicket :: Int
   , planQuestions :: [(RequestId, QuestionReply)]
   , planCompletionRoute :: Maybe (R.Send (Either PlanFailure root))
   , planCompletionAdmission :: Maybe (Either Text ())
@@ -173,6 +185,22 @@ type JoinEffects root left right result =
 data SomeJoin root where
   SomeJoin :: R.ActorHandle (Join root left right result) -> SomeJoin root
 
+data CompletionRelay payload mode = CompletionRelay
+  { relayState :: mode :- State (Int, R.Send (Int, payload), Maybe (Either Text ()))
+  , relayForward :: mode :- Call payload NoReply
+  } deriving Generic
+
+type RelayEffects payload = R.LocalEffects (CompletionRelay payload) '[Actor]
+
+completionRelay :: Int -> R.Send (Int, payload) -> R.ActorSpec (CompletionRelay payload) (RelayEffects payload)
+completionRelay ticket destination =
+  R.definition "work-plan-completion-relay" (Actor.Selected knownEffects) CompletionRelay
+    { relayState = (ticket, destination, Nothing)
+    , relayForward = \payload -> do
+        admission <- R.trySend destination (ticket, payload)
+        R.modify' (\(key, route, _) -> (key, route, Just admission))
+    }
+
 joinDefinition
   :: forall root left right result.
      R.Send (PlanResume root)
@@ -215,8 +243,8 @@ data Coordinator root mode = Coordinator
   , closePlan :: mode :- Call () (R.Reply PlanClose)
   , developmentStarted :: mode :- Call (DevelopmentStarted root) NoReply
   , developmentFinished :: mode :- Call (DevelopmentFinished root) NoReply
-  , reviewFinished :: mode :- Call ReviewCompletion NoReply
-  , verificationFinished :: mode :- Call CheckState NoReply
+  , reviewFinished :: mode :- Call (Int, ReviewCompletion) NoReply
+  , verificationFinished :: mode :- Call (Int, CheckState) NoReply
   , resumePlan :: mode :- Call (PlanResume root) NoReply
   } deriving Generic
 
@@ -233,7 +261,7 @@ coordinator
   -> Eff effects (R.ActorHandle (Coordinator result))
 coordinator checkout owner checkpoints plan route = R.start $ R.withWorktree checkout $
   R.definition "work-plan" (Actor.Selected knownEffects) Coordinator
-    { coordinatorState = PlanState owner plan False Nothing [] [] [] [] Nothing [] route Nothing [] checkpoints Nothing Nothing False
+    { coordinatorState = PlanState owner (renderWorktreeId checkout) plan False Nothing [] [] [] [] [] 0 [] route Nothing [] checkpoints Nothing Nothing False
     , beginPlan = \() -> do
         state <- R.get
         authorized <- isOwner @result state
@@ -253,7 +281,7 @@ coordinator checkout owner checkpoints plan route = R.start $ R.withWorktree che
           , viewedReviewCount = length (planReviews state)
           , viewedQuestionReplies = planQuestions state
           , viewedCompletionAdmission = planCompletionAdmission state
-          , viewedReviews = [flow | ActiveReview _ flow _ _ _ <- planReviews state]
+          , viewedReviews = [flow | ActiveReview _ flow _ _ _ _ <- planReviews state]
           , viewedCheckpointReleases = planCheckpointReleases state
           , viewedCorrection = planCorrection state
           } else Nothing
@@ -268,6 +296,7 @@ coordinator checkout owner checkpoints plan route = R.start $ R.withWorktree che
               if planAuxClosed state then pure () else do
                 mapM_ (void . R.finish . activeRouter) (planDevelopments state)
                 mapM_ (\(SomeJoin join) -> void (R.finish join)) (planJoins state)
+                mapM_ (\(ActiveReview _ _ relay _ _ _) -> void (R.finish relay)) (planReviews state)
                 R.modify' (\current -> current { planAuxClosed = True })
               pure (PlanClosed released)
             Nothing -> pure PlanClosePending
@@ -399,15 +428,17 @@ coordinator checkout owner checkpoints plan route = R.start $ R.withWorktree che
           && any ((== requestId response) . requestId . activeResponse) active then do
           R.modify' (\state -> state
             { planHandledDevelopments = planHandledDevelopments state ++ [requestId response] })
-          let developed = case result of
-                Left failure -> Left (AdmissionRefused DevelopmentNode (Text.pack (show failure)))
-                Right receipt
-                  | executionRequest (responseExecution receipt) /= requestId response ->
-                      Left (SourceRefused DevelopmentNode "response request identity differs")
-                  | Blocked reason evidence <- responseValue receipt -> Left (WorkerBlocked reason evidence)
-                  | Produced candidate <- responseValue receipt -> case candidateAtSubmission candidate (responseWorktree receipt) of
-                      Left reason -> Left (SourceRefused DevelopmentNode reason)
-                      Right exact -> Right (Developed task exact response progress receipt)
+          developed <- case result of
+            Left failure -> pure (Left (AdmissionRefused DevelopmentNode (Text.pack (show failure))))
+            Right receipt
+              | executionRequest (responseExecution receipt) /= requestId response ->
+                  pure (Left (SourceRefused DevelopmentNode "response request identity differs"))
+              | Blocked reason evidence <- responseValue receipt -> pure (Left (WorkerBlocked reason evidence))
+              | Produced candidate <- responseValue receipt -> case candidateAtSubmission candidate (responseWorktree receipt) of
+                  Left reason -> pure (Left (SourceRefused DevelopmentNode reason))
+                  Right exact -> do
+                    accepted <- acceptCorrection response exact
+                    pure (Developed task exact response progress receipt <$ accepted)
           settled <- R.gets planOutcome
           case settled of
             Just _ -> releaseIfQuiescent
@@ -463,11 +494,9 @@ finishPlan _ result = do
 releaseIfQuiescent :: PlanHandler root ()
 releaseIfQuiescent = do
   state <- R.get
-  let reviewsSettled = all (\(ActiveReview request _ _ _ _) ->
-        request `elem` planHandledReviews state) (planReviews state)
-      verificationSettled = case planVerification state of
-        Nothing -> True
-        Just _ -> False
+  let reviewsSettled = all (\(ActiveReview ticket _ _ _ _ _) ->
+        ticket `elem` planHandledReviews state) (planReviews state)
+      verificationSettled = null (planVerifications state)
   case (planOutcome state, planCheckpointReleases state) of
     (Just _, Nothing)
       | all (\active -> requestId (activeResponse active)
@@ -477,6 +506,56 @@ releaseIfQuiescent = do
           released <- mapM releaseCheckpoint (planCheckpoints state)
           R.modify' (\current -> current { planCheckpointReleases = Just released })
     _ -> pure ()
+
+-- A corrected request cannot advance on the worker's HEAD alone. The worker
+-- must have received the update, reported the exact incorporation, and
+-- submitted a commit descending from the accepted baseline.
+acceptCorrection
+  :: Response (Outcome Candidate) -> Candidate
+  -> PlanHandler root (Either PlanFailure ())
+acceptCorrection response candidate = do
+  correction <- R.gets planCorrection
+  case correction of
+    Just current | correctionRequest current == requestId response ->
+      case correctionUpdate current of
+        Left _ -> pure (Left (SourceRefused DevelopmentNode
+          "accepted correction update was refused"))
+        Right update -> do
+          observed <- pollRequestUpdate update
+          R.modify' (\state -> state { planCorrection = Just
+            (current { correctionDelivery = Just observed }) })
+          case observed of
+            Right UpdatePresented -> case correctionReported current of
+              Just (Incorporated amendment source checks)
+                | correctionReportRefusal current == Nothing
+                  && amendment == baselineAmendment (correctionChange current)
+                  && source == baselineAfter (correctionChange current)
+                  && all (`elem` checks) (correctionExpectedChecks current) ->
+                    checkAcceptedAncestor (baselineAfter (correctionChange current))
+                      (candidateCommit candidate)
+              _ -> pure (Left (SourceRefused DevelopmentNode
+                "accepted correction lacks an exact incorporation report"))
+            _ -> pure (Left (SourceRefused DevelopmentNode
+              "accepted correction was not presented to the worker"))
+    _ -> pure (Right ())
+
+checkAcceptedAncestor :: GitOid -> GitOid -> PlanHandler root (Either PlanFailure ())
+checkAcceptedAncestor ancestor candidate = do
+  bound <- boundWorktree
+  case bound of
+    Left failure -> pure (Left (SourceRefused DevelopmentNode
+      ("coordinator checkout unavailable: " <> Text.pack (show failure))))
+    Right handle -> do
+      checked <- Cmd.run (Cmd.inDirectory (cwd (handleReceipt handle))
+        (Cmd.argv ["git", "merge-base", "--is-ancestor",
+          renderGitOid ancestor, renderGitOid candidate]))
+      pure $ case (Cmd.commandOutcome (Cmd.commandResult checked),
+                   Cmd.commandCleanup (Cmd.commandResult checked)) of
+        (Cmd.CommandExited 0, Cmd.CommandClean) -> Right ()
+        (Cmd.CommandExited 1, Cmd.CommandClean) -> Left (SourceRefused DevelopmentNode
+          "candidate does not descend from the accepted baseline")
+        _ -> Left (SourceRefused DevelopmentNode
+          "accepted baseline ancestry could not be verified")
 
 drive
   :: forall root value. Coordinator root R.Self -> WorkPlan value
@@ -507,14 +586,16 @@ drive own plan complete = case stepPlan plan of
     Left failure -> complete (Left failure)
     Right policy -> do
       owner <- R.gets planOwner
-      let policy' = policy { flowCompleted = Just (reviewFinished own) }
+      ticket <- freshTicket
+      relay <- R.start (completionRelay ticket (reviewFinished own))
+      let policy' = policy { flowCompleted = Just (relayForward (R.client relay)) }
       flow <- R.start (R.withWorktree (reviewCheckout spec)
         (checkedReviewFlow owner (reviewTask spec) policy'
           (developedRequest developed) (reviewChecks spec) semanticReviewChoice))
       route <- R.forwardResult (developedRequest developed)
         (firstCandidate (R.client flow))
       R.modify' (\state -> state { planReviews = planReviews state ++
-        [ActiveReview (requestId (developedRequest developed)) flow developed next complete] })
+        [ActiveReview ticket flow relay developed next complete] })
       route `seq` pure ()
   NeedIntegration _ spec reviewed next -> do
     let source = responseWorktree (developedReceipt (reviewedDevelopment reviewed))
@@ -535,12 +616,18 @@ drive own plan complete = case stepPlan plan of
     if null (verificationChecks spec) then
       complete (Left (VerificationStopped "no product checks declared"))
     else do
-      started <- startCheckPlanInto (verificationFinished own)
-        (checkedHead checked) (verificationChecks spec)
+      ticket <- freshTicket
+      relay <- R.start (completionRelay ticket (verificationFinished own))
+      namespace <- R.gets planNamespace
+      started <- startExactVerification (checkedHead checked) namespace ticket
+        (verificationChecks spec) (relayForward (R.client relay))
       case started of
-        Left reason -> complete (Left (VerificationStopped (Text.pack (show reason))))
-        Right planStart -> R.modify' (\state -> state
-          { planVerification = Just (ActiveVerification spec checked planStart next complete) })
+        Left reason -> do
+          void (R.finish relay)
+          complete (Left (VerificationStopped reason))
+        Right (planStart, running) -> R.modify' (\state -> state
+          { planVerifications = planVerifications state ++
+              [ActiveVerification ticket relay running spec checked planStart next complete] })
   NeedParallel _ left right next -> do
     join <- R.start (joinDefinition (resumePlan own) next complete)
     R.modify' (\state -> state { planJoins = planJoins state ++ [SomeJoin join] })
@@ -571,46 +658,47 @@ checkReviewScope scopes spec = do
   limit <- effectiveRepairLimit scopes
   pure ((reviewPolicy spec) { flowRepairLimit = min limit (flowRepairLimit (reviewPolicy spec)) })
 
-continueReview :: Coordinator root R.Self -> ReviewCompletion -> PlanHandler root ()
-continueReview own completion = do
+freshTicket :: PlanHandler root Int
+freshTicket = do
+  ticket <- R.gets planNextTicket
+  R.modify' (\state -> state { planNextTicket = ticket + 1 })
+  pure ticket
+
+continueReview :: Coordinator root R.Self -> (Int, ReviewCompletion) -> PlanHandler root ()
+continueReview own (ticket, completion) = do
   reviews <- R.gets planReviews
   handled <- R.gets planHandledReviews
-  case completion of
-    ReviewRefused request reason | request `notElem` handled -> case select request reviews of
-      Just (ActiveReview _ _ _ _ complete) -> do
-        mark request
-        settled <- R.gets planOutcome
-        case settled of
-          Just _ -> releaseIfQuiescent
-          Nothing -> complete (Left (ReviewStopped (Text.pack (show reason))))
-      Nothing -> pure ()
-    ReviewApproved request proof | request `notElem` handled -> case select request reviews of
-      Just (ActiveReview _ flow developed next complete) -> do
-        mark request
-        settled <- R.gets planOutcome
-        case settled of
-          Just _ -> releaseIfQuiescent
-          Nothing -> do
-            state <- R.call (reviewSnapshot (R.client flow)) ()
-            drive own (next (Reviewed developed proof state)) complete
-      Nothing -> pure ()
+  case [active | active@(ActiveReview key _ _ _ _ _) <- reviews, key == ticket] of
+    [ActiveReview _ flow relay developed next complete] | ticket `notElem` handled -> do
+      R.modify' (\state -> state
+        { planHandledReviews = planHandledReviews state ++ [ticket] })
+      void (R.finish relay)
+      settled <- R.gets planOutcome
+      case settled of
+        Just _ -> releaseIfQuiescent
+        Nothing -> case completion of
+          ReviewRefused request reason
+            | request == requestId (developedRequest developed) ->
+                complete (Left (ReviewStopped (Text.pack (show reason))))
+          ReviewApproved request proof
+            | request == requestId (developedRequest developed) -> do
+                state <- R.call (reviewSnapshot (R.client flow)) ()
+                drive own (next (Reviewed developed proof state)) complete
+          _ -> complete (Left (SourceRefused ReviewNode
+            "review callback names another development request"))
     _ -> pure ()
-  where
-    mark request = R.modify' (\state -> state
-      { planHandledReviews = planHandledReviews state ++ [request] })
-    select request = first . filter matches
-      where matches (ActiveReview current _ _ _ _) = current == request
-    first (value : _) = Just value
-    first [] = Nothing
 
-continueVerification :: Coordinator root R.Self -> CheckState -> PlanHandler root ()
-continueVerification own checks = do
-  active <- R.gets planVerification
-  case active of
-    Nothing -> pure ()
-    Just (ActiveVerification spec checked started next complete) -> do
+continueVerification :: Coordinator root R.Self -> (Int, CheckState) -> PlanHandler root ()
+continueVerification own (ticket, checks) = do
+  active <- R.gets planVerifications
+  case [item | item@(ActiveVerification key _ _ _ _ _ _ _) <- active, key == ticket] of
+    [ActiveVerification _ relay running spec checked started next complete] -> do
       let report = PlanReport started (Just checks)
-      R.modify' (\state -> state { planVerification = Nothing })
+      R.modify' (\state -> state { planVerifications =
+        [item | item@(ActiveVerification key _ _ _ _ _ _ _) <- planVerifications state,
+          key /= ticket] })
+      void (R.finish relay)
+      void (R.finish running)
       settled <- R.gets planOutcome
       case Focused.planWatcher started of
         Just (Right watcher) -> do
@@ -624,3 +712,4 @@ continueVerification own checks = do
         Left reason -> complete (Left (VerificationStopped reason))
         Right value -> drive own
           (next (AcceptedSource value checked report)) complete
+    _ -> pure ()
