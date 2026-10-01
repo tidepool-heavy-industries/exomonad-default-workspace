@@ -6,13 +6,13 @@
 {-# LANGUAGE TypeOperators #-}
 
 -- | Route named focused checks without making a model poll their command jobs.
-module Project.CheckResults
-  ( module Project.TestEvidence
+module Exomonad.Contrib.CheckResults
+  ( module Exomonad.Contrib.Check.Cargo
   , NoticePolicy (..), CheckSetupIssue (..), CheckVerdict (..)
   , CheckExecution (..), SourceAssurance (..), CheckOutcome (..), CheckEntry (..)
   , CheckState (..), CheckNotice (..), CheckActor (checkSnapshot)
   , watchChecks, watchChecksWithRefusals, watchChecksInto, readChecks, finishChecks, checkVerdict
-  , checkExecution, checkSourceAssurance, checkLine, checksSummary
+  , checkExecution, checkSourceAssurance, checkEvidenceComplete, checkLine, checksSummary
   ) where
 
 import Control.Monad.Freer (Eff, Member)
@@ -25,7 +25,7 @@ import Tidepool.Actors.Exomonad
 import qualified Tidepool.Command as Cmd
 import Tidepool.Effects.Core (Actor, Commands)
 import Tidepool.Effects.Row (knownEffects)
-import Project.TestEvidence
+import Exomonad.Contrib.Check.Cargo
 
 data NoticePolicy = NotifyProblems | NotifyAllTerminal | NotifySummary deriving (Eq, Show)
 
@@ -181,6 +181,12 @@ checkExecution entry outcome
 checkSourceAssurance :: CheckEntry -> CheckOutcome -> SourceAssurance
 checkSourceAssurance entry outcome | not (matchingReceipt entry outcome) = SourceUnrecorded
 checkSourceAssurance _ outcome = focusedSourceAssurance (checkFocused outcome)
+
+-- | A complete result belongs to the original job and proves a passing check
+-- or a counted assertion failure. Diagnostic 'CheckFailed' alone is insufficient.
+checkEvidenceComplete :: CheckEntry -> CheckOutcome -> Bool
+checkEvidenceComplete entry outcome =
+  matchingReceipt entry outcome && focusedEvidenceComplete (checkFocused outcome)
 
 matchingReceipt :: CheckEntry -> CheckOutcome -> Bool
 matchingReceipt entry outcome =
