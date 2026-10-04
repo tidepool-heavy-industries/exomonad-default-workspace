@@ -20,8 +20,8 @@
 -- 'contextActorId', 'contextActorIncarnation', and 'contextActorPath'), and
 -- the parent steers the child itself.
 -- 'trivialCall' is a plain, cheap gate 'watchBy' runs before ever asking Jev:
--- a bash call that came back CommandExited 0, whose displayed output is no
--- longer than 'Project.Shell.rawLineThreshold' lines, and whose command text
+-- a bash call whose typed facts report a clean zero exit and complete payload
+-- within 'Project.Shell.rawLineThreshold' lines, and whose command text
 -- carries no token from a small destructive-command list, is abstained on
 -- directly. It is exported so a workspace can reuse or replace it; it never
 -- widens what a heuristic can trip, only skips asking Jev at all for a call
@@ -55,6 +55,8 @@ import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Text as T
 import Tidepool.Aeson.Value (Value (..), encodeValue, object, (.=))
+import Tidepool.Aeson.FromJSON (Result (..), fromJSON)
+import qualified Tidepool.Command.Tools as Command
 import Tidepool.Agent.Contract
 import Tidepool.Actors.Exomonad (parentAgent, sendMessage)
 import Tidepool.Effects.Core
@@ -183,21 +185,22 @@ boundedEvidence text
 -- 'watchBy'. 'Nothing' means "ask Jev as usual"; 'Just' carries the full
 -- abstention reason 'watchBy' hands back unchanged.
 --
--- Trips only for the @bash@ tool, and only when all three hold: the result
--- reads as a clean exit (@terminal: yes@ over @CommandExited 0@, the prefix
--- 'Project.Shell.tools' always writes for a finished command); the displayed
--- output -- everything after that status heading, not the whole
--- 'ToolResult' text -- is no more than 'Project.Shell.rawLineThreshold'
--- lines, the same bound the shell itself uses to skip Jev on display; and
--- the command text carries none of 'destructiveTokens'. Anything else -- a
--- non-bash tool, a failed or non-terminal result, an oversized result, or
--- one destructive token anywhere in the command -- falls through to the
--- ordinary battery.
+-- Trips only for bash with typed command facts: a finished,
+-- successful clean exit, a complete short payload, and no destructive token.
+-- Presentation headings and recovery text cannot establish command success.
 trivialCall :: ToolCall -> ToolResult -> Maybe Text
 trivialCall call result
   | Just command <- bashCommandText call
-  , Just body <- displayedOutputBody (toolResultOutput result)
-  , countTextLines body <= Shell.rawLineThreshold
+  , toolResultName result == "bash"
+  , Success (Command.ObservedCommand
+      { Command.state = Command.Finished
+      , Command.successful = Just True
+      , Command.outcome = Just (Command.OutcomeExited 0)
+      , Command.cleanup = Just Command.CleanupClean
+      , Command.payload_lines = lines
+      , Command.complete = True
+      }) <- (fromJSON (toolResultValue result) :: Result Command.CommandToolFacts)
+  , lines >= 0 && lines <= Shell.rawLineThreshold
   , not (any hasDestructiveToken (map T.words (splitOnOperators command)))
   = Just "trivial call: successful bash call, short output, no destructive tokens"
   | otherwise = Nothing
@@ -211,35 +214,6 @@ bashCommandText call
         Just (String command) -> Just command
         _ -> Nothing
       _ -> Nothing
-
--- | The exact marker 'Project.Shell.statusHeading' writes on a finished
--- command's status line for a clean (zero) exit, regardless of cleanup
--- state. A bash tool result also carries a host-written
--- @retained as ... :: Cmd.Job@ line before this heading (see
--- 'Tidepool.Command.Types.Job') and a @session_id: ...@ line above it, in
--- addition to this line itself.
-cleanExitMarker :: Text
-cleanExitMarker = "terminal: yes \183 CommandExited 0"
-
--- | The command's own displayed output: everything after the status line
--- carrying 'cleanExitMarker', not the whole 'ToolResult' text. The real
--- result text is @retained as jobN :: Cmd.Job@, then @session_id: ...@, then
--- this status line, then the command's output -- three fixed lines that are
--- no part of what 'Project.Shell.rawLineThreshold' bounds. Counting them
--- against that bound would trip this gate later than the shell's own
--- raw-display decision ('Project.Shell.prepare'), which measures only the
--- output that follows the same heading. 'Nothing' when the marker is absent
--- (not a clean-exit result).
-displayedOutputBody :: Text -> Maybe Text
-displayedOutputBody text = case T.breakOn cleanExitMarker text of
-  (_, rest)
-    | T.null rest -> Nothing
-    | otherwise -> Just (T.drop 1 (T.dropWhile (/= '\n') rest))
-
-countTextLines :: Text -> Int
-countTextLines text
-  | T.null text = 0
-  | otherwise = length (T.lines text)
 
 -- | Split a command on the operators that start a new command within it:
 -- sequencing (@;@), conditionals (@&&@, @||@), pipes (@|@), and command
