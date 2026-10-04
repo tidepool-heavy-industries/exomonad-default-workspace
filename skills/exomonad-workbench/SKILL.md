@@ -1,15 +1,19 @@
 ---
 name: exomonad-workbench
-description: Write Haskell notebook cells that typecheck the first time — Text vs String, Label vs Text, annotating polymorphic expressions, keeping observations small, multi-line operator chains, and shell arguments. Load when a cell was rejected or a display was truncated.
+description: Write Haskell notebook cells that typecheck the first time — Text vs String, Label vs Text, annotating polymorphic expressions, explicit value display, multi-line operator chains, and shell arguments. Load when a cell was rejected or a display needs expansion.
 ---
 
 Send one cell of ordinary Haskell: declarations, bindings and expressions. GHC
 splits declarations from statements and checks the whole cell before any effect
-runs: typecheck rejection installs no bindings and executes nothing. Runtime
-failure retains the completed prefix; inspect the receipt before retry. Declarations are
+runs: typecheck rejection installs no bindings and executes nothing. Successful
+cells publish declarations and bindings together. Runtime failure or cancellation
+before publication publishes no cell names; completed effects and independently
+owned captures retain their receipts. Inspect the outcome before retry. Declarations are
 mutually recursive and visible to every statement, but a declaration cannot
-depend on a binding a statement in the same cell introduces. Every expression
-displays its value; declarations and bindings persist into later cells.
+depend on a binding a statement in the same cell introduces. Expressions and
+bindings retain typed values without automatic rendering; declarations and
+bindings persist into later cells. Use `display value` for bounded structured
+output, and `display (show value)` for Haskell's textual `Show` form.
 
 The APIs in this skill are **shipped** and need no project module. Most names
 are already in scope; the raw lookup API below and `Jev` and `Commands`
@@ -23,7 +27,7 @@ data Finding = Finding { findingPath :: Text, findingLine :: Int }
 renderFindingLocation :: Finding -> Text
 renderFindingLocation finding = findingPath finding <> ":" <> T.pack (show (findingLine finding))
 let findings = [Finding "src/Retry.hs" 12, Finding "src/Fetch.hs" 44]
-map renderFindingLocation findings
+display (map renderFindingLocation findings)
 ```
 
 ## Look up a name from a cell
@@ -33,7 +37,8 @@ then use its default request constructor:
 
 ```haskell
 import Tidepool.Lookup (lookupRaw, lookupRequest)
-lookupRaw (lookupRequest ["Cmd.quiet"])
+found <- lookupRaw (lookupRequest ["Cmd.quiet"])
+display found
 ```
 
 `lookupRequest` uses the shipped hosted tool's defaults; use `LookupRequest`
@@ -53,7 +58,7 @@ always a sign that something should have stayed `Text`.
 ```haskell
 let attempts = 3 :: Int
 let note = "retry budget " <> T.pack (show attempts) <> " exhausted" :: Text
-note
+display note
 ```
 
 A fully polymorphic expression — a bare `error "…"` or `undefined` — cannot be
@@ -62,7 +67,7 @@ Annotate it:
 
 ```haskell
 let unreachable path = error ("no owner for " <> path) :: Text
-("annotated, and never forced" :: Text)
+display ("annotated, and never forced" :: Text)
 ```
 
 `assignment` takes a validated `Label`, not free `Text`. Static assignment
@@ -73,7 +78,7 @@ Campaign, fork-group and watch labels have their own constructors and validators
 ```haskell
 let laneLabel = ([label|consumer-tests|] :: Label)
 let dynamic = labelFromText ("work-" <> T.pack (show (2 :: Int)))
-(laneLabel, dynamic)
+display (laneLabel, dynamic)
 ```
 
 ## A cell splits into units
@@ -85,24 +90,24 @@ one line with nothing after it: a trailing `.`, `$` or backquoted operator is
 rejected as a dangling operator, and a stray `) :: Text` on the next line is a
 separate unit that fails to parse.
 
-## Every bound value is observed
+## Keep bindings and display selected evidence
 
-Each binding in a cell is displayed, and the cell shares one bounded display
-allowance. Binding six whole files exhausts it before the interesting part of
-the cell runs. Bind the short preview, not the file:
+Bindings retain typed values without rendering them. Keep large command results
+bound, project the fields you need, and explicitly display a small preview:
 
 ```haskell
 previews <- forM ["README.md", "Justfile"] $ \path ->
   (path,) . fmap (T.take 2000) . Cmd.stdout
     <$> Cmd.run (Cmd.withArguments [path] [bash|sed -n '1,40p' -- "$1"|])
-map fst previews
+previewHandle <- display (map fst previews)
+display (expansions previewHandle)
 ```
 
 The preview retains read failures as `Left`; fetch complete text before judgments
-that require it. Display the keys and keep the previews for the next statement. A truncated display offers `cellDisplay.more`, which reads
-the next retained page without repeating the effect. Bound command results show
-a compact summary while retaining the full observation; `Cmd.quiet action`
-suppresses routine presentation for unbound commands when only data matters.
+that require it. `display` returns a handle; `expansions handle` lists available
+field keys and labels, and `expand handle key` inspects one field. The key belongs
+to that display handle. `Cmd.quiet action` suppresses command event output when
+only data matters.
 
 ## Multi-line chains
 
@@ -122,7 +127,7 @@ let packet =
              (J.alt #none "No file in this set is on the path" ("" :: Text)
                J..| J.many #file fst snd [("src/Retry.hs", "the retry loop and its backoff")])
 answer <- J.ask (J.rawState (String "one file, one preview")) packet
-either (const ("packet bound" :: Text)) (const "answered") answer
+display (either (const ("packet bound" :: Text)) (const "answered") answer)
 ```
 
 Parentheses around the whole chain work equally well and survive reindentation
@@ -142,7 +147,7 @@ becomes a shell injection.
 
 ```haskell
 let compare' old new = Cmd.withArguments [old, new] [bash|git diff --stat "$1" "$2"|]
-Cmd.describe (compare' "HEAD~1" "HEAD")
+display (Cmd.describe (compare' "HEAD~1" "HEAD"))
 ```
 
 `Cmd.describe` inspects the intent without executing. `Cmd.argv [program, a, b]`
@@ -166,7 +171,7 @@ has to land on the binding, not beside it.
 severity :: Int -> Text
 severity n = if n > 2 then "high" else "low"
 let inline :: Int -> Text; inline n = "work " <> T.pack (show n)
-map severity [1, 3 :: Int] <> map inline [7 :: Int]
+display (map severity [1, 3 :: Int] <> map inline [7 :: Int])
 ```
 
 Pin a polymorphic result the same way at the use site. `knownEffects` in an
@@ -182,7 +187,7 @@ literal, not the call:
 
 ```haskell
 let state = object ["owned_path" .= ("src/app.rs" :: Text), "changed" .= (2 :: Int)]
-state
+display state
 ```
 
 The diagnostic for this reads the same as the one for an ambiguous function,
@@ -197,7 +202,7 @@ the `Text` back out by matching:
 ```haskell
 let onto = mkBranchName "integration/tags"
 let from = GitRef "exomonad/integration"
-(case onto of BranchName b -> b, case from of GitRef ref -> ref)
+display (case onto of BranchName b -> b, case from of GitRef ref -> ref)
 ```
 
 `atRef (GitRef "exomonad/integration")` is the deliberate committed seed for a
@@ -215,7 +220,7 @@ Bind it, and pattern-match the success in the bind:
 
 ```haskell
 Right src <- readFile ".exomonad/config.toml"
-T.take 200 src
+display (T.take 200 src)
 ```
 
 A refutable bind like this fails the statement when the read fails, which is
@@ -229,16 +234,17 @@ The example renders a short failure notice while keeping the issue in `out`:
 
 ```haskell
 out <- Cmd.stdout <$> Cmd.run (Cmd.withArguments ["HEAD"] [bash|git show --stat --oneline "$1"|])
-either (const "not visible from here") (T.take 2000) out
+display (either (const "not visible from here") (T.take 2000) out)
 ```
 
-Bind first and project after. A long output truncates its display and offers
-`cellDisplay.more`, which reads the next retained page without rerunning the
-command — so the binding is what you keep, and the display is what you narrow.
-Extracting one field per statement out of a long value costs a statement each
-time; bind the value once and project in one expression.
+Bind first and project after. Explicit display emits only the selected bounded
+value; use `Cmd.output` and `Cmd.next` to navigate retained command output without
+rerunning the command. Extracting one field per statement out of a long value
+costs a statement each time; bind the value once and project in one expression.
 
-If a statement fails at runtime, its earlier bindings and completed effects stay
-committed and the suffix is marked not run — read that receipt before deciding
-whether the next cell is new intent. `doc workbench` is the same material in
+If a statement fails at runtime, none of that cell's names become public and the
+suffix is marked not run. Completed effects remain real: recover command output
+through its retained session ID, without rerunning the command. A successfully
+published cell remains published even if later cleanup is uncertain. Read the
+receipt before submitting new intent. `doc workbench` is the same material in
 fallback form.
