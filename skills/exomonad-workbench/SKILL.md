@@ -70,16 +70,9 @@ let unreachable path = error ("no owner for " <> path) :: Text
 display ("annotated, and never forced" :: Text)
 ```
 
-`assignment` takes a validated `Label`, not free `Text`. Static assignment
-labels use `[label|revision|]`, which is checked at compile time. A `Text`
-computed at runtime needs `labelFromText`; handle its `Either` before launch.
-Campaign, fork-group and watch labels have their own constructors and validators.
-
-```haskell
-let laneLabel = ([label|consumer-tests|] :: Label)
-let dynamic = labelFromText ("work-" <> T.pack (show (2 :: Int)))
-display (laneLabel, dynamic)
-```
+Agent labels are optional ordinary `Text` used for description. They do not
+select an actor, workspace, permission, or group. Agent input and reply types
+come from the actual installed `AgentSpec`; use raw typed values for requests.
 
 ## A cell splits into units
 
@@ -131,7 +124,7 @@ display (either (const ("packet bound" :: Text)) (const "answered") answer)
 ```
 
 Parentheses around the whole chain work equally well and survive reindentation
-better. The same rule governs `<$>`/`<*>` chains inside an `unfold`.
+better. The same rule governs `<$>`/`<*>` chains over typed `Await` values.
 
 A packet stays polymorphic in whether it holds questions, answers or state
 fields, so one bound and never asked has no mode to settle on and fails to

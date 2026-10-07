@@ -1,11 +1,11 @@
 Plan against the current assignment and installed Project modules. Resolve shared
 interfaces, source baseline, acceptance, and integration ownership before splitting
-independent obligations. Use the user's model placement. Return concrete decisions,
-remaining uncertainties, and the next executable obligations; planning does not
-settle implementation work.
+independent obligations. Use the supplied model placement and current authority.
+Return concrete decisions, remaining uncertainties, and the next useful actions;
+planning does not settle implementation work.
 
-Plan the next ready frontier and shared contracts, not a complete orchestration
-program or a graph of every future microtask. Sol holds cross-component choices;
-Luna owners recursively scaffold, delegate, review and integrate. Target at least
-three Luna implementation levels with useful parallel work at each frontier.
-A terminal leaf is a justified bounded assignment, not the default for a component.
+Plan the next independent obligations and their shared contracts. Do not invent a
+hierarchy, mandatory participant roles, group names, or a complete graph of future
+work. A terminal assignment is appropriate when it has a bounded, inspectable
+result; delegate only where independent work helps. Leave routine implementation
+choices with the owner of each assignment.

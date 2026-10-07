@@ -17,7 +17,7 @@ Availability of the names below:
 - **Shipped** — in every Exomonad cell: `R.definition`, `R.start`, `R.client`,
   `R.send`, `R.call`, `R.on`, `R.settlement`, `R.progress`, `R.lifecycle`,
   `Cmd.completion`, `R.self`, `R.sender`, `R.finish`, `R.replace`,
-  `R.forwardResult`, `requestWithProgressInto`, `LocalEffects`, `ActorSpec`,
+  `R.forwardResult`, `request`, `requestWithProgress`, `Request`, `LocalEffects`, `ActorSpec`,
   `Handler`, `Actor.Selected`, `knownEffects`, `Replies`, `Actor`,
   `Notifications`.
 - **Shared contrib** — available through configured package imports: `coordinationActor` and
@@ -67,8 +67,8 @@ results <- R.start resultDefinition
 R.call (resultCount (R.client results)) ()
 ```
 
-This block assumes `worker :: Response (Outcome Candidate)` from the current
-session. `R.progress p` carries `ProgressState progress`; `R.settlement response`
+This block assumes `worker :: Request (Outcome Candidate)` from the current
+session. `R.progress p` carries `ProgressState progress`; `R.settlement request`
 carries the exact typed terminal result, including failure and execution evidence.
 `Cmd.completion job` carries `Cmd.CommandResult` for a command owned by the
 creator. It retains completion for a late collector. Route the result, including
@@ -87,7 +87,7 @@ Preserve the typed result's request/execution evidence when forwarding. Captured
 handles do not impersonate their creator or transfer resource ownership. Source
 attachment is authorized against the new actor's creator: a handler creating a
 nested collector must own the observed request, not merely capture its parent's
-response handle.
+request handle.
 
 A separately bound handler helper needs its concrete state/effect type when GHC
 cannot infer the row from the record. Annotate the expression with
@@ -100,27 +100,19 @@ uncertain request or send on replacement. `R.replace handle newDefinition` keeps
 the schema and retained state, and returns the replacement's exact handle.
 Previously distributed endpoints still name their original incarnation.
 
-For handler-owned requests, `requestWithProgressInto` runs your retention callback
-with the exact typed response/progress handles before submission. Send those handles
-to a route on `Self`; that route can create a collector using its receiving
-incarnation's endpoints. `checks/review-continuation.hs` is a low-level regression
-fixture for this retention boundary; its retained reviewer requires explicit
-checkout preparation. Routine review uses `startReviewFlow`, described in
-`WORKBENCH.md`, which owns exact-source admission. Do not reconstruct
-response handles from labels or repeat submission after uncertain failure.
+When a record actor needs work from another agent, use the ordinary typed
+request operation and keep its returned `Request` handle in the actor state or
+route. Compose `result` as an `Await`; use `requestWithProgress` when progress is
+an independent input to the interpreter. A request handle is not reconstructed
+from a label, and retaining it does not transfer ownership. For Git review and
+integration, use `exomonad-project-work` as optional authored workflow policy.
 
-Keep the integration actor alive through useful repairs. When done:
-
-```haskell
-joinFinal <- R.finish joiner
-resultsFinal <- R.finish results
-```
-
-`R.finish` drains accepted work and returns `ActorExit state`; retain that value
-for later inspection. It does not retire the workers whose results were observed.
-Use the parent's scoped cleanup separately. Actor-to-actor payloads should be
-typed values or compact actionable deltas, not narrated snapshots. Query only
-what the next engineering decision needs.
+When done, finish only the record actors you own and retain their final state.
+`R.finish` drains accepted work and returns `ActorExit state`; it does not retire
+the agents whose results were observed. Use the owning lifecycle operation for
+each agent and resource. Actor-to-actor payloads should be typed values or
+compact actionable deltas, not narrated snapshots. Query only what the next
+engineering decision needs.
 
 ## Without the example workspace
 
@@ -156,24 +148,15 @@ R.send (noted (R.client tally)) "first finding"
 R.call (noteCount (R.client tally)) ()
 ```
 
-A record actor may hold a worktree. `R.withWorktree tree spec` starts it
-holding a worktree the parent created and did not bind; ownership is exclusive
-and integrate authority follows the owned handle, so this is how an actor comes to own
-the tree it merges into. An actor with a worktree resolves to the coding role,
-one without resolves to research, and a row that needs `WorktreeIntegration`
-only sits under the first. The host admits at most one worktree per actor.
+Agent workspace attachment is selected when the agent is spawned. `SameDir`
+shares the actual writable files, index, and HEAD; a forked worktree selects a
+committed seed. Neither changes the record actor's effect row. Workspace access
+and operation authority remain separate: the installed typed AgentSpec determines
+which tools and effects the actor can use.
 
-```
-Right tree <- createWorktree (fromRef "exomonad/integration" "integration")
-integrator <- R.start (R.withWorktree (worktreeId tree) integratorDefinition)
-```
-
-Add effects to the list as the handlers need them: `Forks` to admit a child,
-`Commands` to run one, `Jev` for a judgment. `Jev` and `Commands` are not
+Add only the effects the handlers need: `Watches` for typed readiness,
+`Commands` to run a command, `Jev` for a judgment. `Jev` and `Commands` are not
 re-exported by the workbench surface — a cell naming them needs
-`import Tidepool.Effects.Core (Jev, Commands)` before the row. The row is still
-checked against the launching actor's ceiling, so asking for more than the
-creator holds is refused at start, not silently granted. When the loop this
-record carries is implement → review → repair → merge, load `exomonad-review`
-for the owner-map and repair-policy shape and `Exomonad.Contrib.Merge` for the
-integrator actor.
+`import Tidepool.Effects.Core (Jev, Commands)` before the row. The record actor's declared effects are checked when it is installed. For Git
+delivery, load `exomonad-project-work` when the review and integration method
+fits the task.
