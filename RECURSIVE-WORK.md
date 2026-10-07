@@ -31,8 +31,8 @@ are ordinary domain labels. The collector does not create agents or batches.
 
 For a collector, inspect retained state and original receipts before acting on a
 notice. `acknowledgeWork` records inspected publications; it does not prove
-incorporation. `finishWork` closes the collector and returns its retained state;
-it does not retire the model agents. Agent retirement and workspace cleanup are
+incorporation. `finishWork` closes the collector and returns a typed actor exit;
+`Completed` contains the retained state. It does not retire the model agents. Agent retirement and workspace cleanup are
 separate operations, covered by the cleanup skill. Keep unfinished work under a
 named owner and retain its actual terminal evidence.
 
