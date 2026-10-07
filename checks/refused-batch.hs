@@ -1,9 +1,10 @@
-{-# LANGUAGE QuasiQuotes #-}
-let refusedBranch = withContext (selected id) (withLifetime ActorOwned $ coding @Text projectHead (assignment [label|refused-worker|] ("No allocation" :: Text)))
+Right producer <- spawnSubagent (FreshCtx "Wait for a short work request.") (ForkWorktree projectHead)
+  ((defaultSpawnOptions workspaceAgentSpec) { spawnInstructions = Just (projectPrompt "task"), spawnLabel = Just "refused-worker" })
+Right (producerRequest, updates) <- requestWithProgress @WorkProgress @Text producer "No allocation" defaultRequestOptions
 beforeRefusal <- length . snapshotActors <$> snapshot
-emptyRefusal <- unfoldWork (batch "typed-batch" "empty") [] (keepWork :: WorkSink Text)
-blankRefusal <- unfoldWork (batch "typed-batch" "blank") [workChild "  " refusedBranch] keepWork
-duplicateRefusal <- unfoldWork (batch "typed-batch" "duplicate") [workChild "same" refusedBranch, workChild "same" refusedBranch] keepWork
-contextRefusal <- unfoldWork (batch "typed-batch" "uncaptured") [workChild "uncaptured" (withContext inherited refusedBranch)] keepWork
+emptyRefusal <- followWork [] (keepWork :: WorkSink Text)
+blankRefusal <- followWork [("  ", producerRequest, updates)] (keepWork :: WorkSink Text)
+duplicateRefusal <- followWork [("same", producerRequest, updates), ("same", producerRequest, updates)] (keepWork :: WorkSink Text)
 afterRefusal <- length . snapshotActors <$> snapshot
-(case emptyRefusal of { Left EmptyWorkBatch -> True; _ -> False }) && (case blankRefusal of { Left EmptyWorkName -> True; _ -> False }) && (case duplicateRefusal of { Left (DuplicateWorkName "same") -> True; _ -> False }) && (case contextRefusal of { Left (WorkAdmissionRefused (UnfoldUncapturedContext _)) -> True; _ -> False }) && beforeRefusal == afterRefusal
+producerState <- pollResponse producerRequest
+(case emptyRefusal of { Left NoSources -> True; _ -> False }) && (case blankRefusal of { Left BlankSourceName -> True; _ -> False }) && (case duplicateRefusal of { Left (DuplicateSourceName "same") -> True; _ -> False }) && beforeRefusal == afterRefusal && (case producerState of { ResponsePending _ -> True; _ -> False })
