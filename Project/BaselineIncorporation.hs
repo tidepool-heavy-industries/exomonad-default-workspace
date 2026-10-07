@@ -15,7 +15,7 @@
 -- merely because a worker named it.
 module Project.BaselineIncorporation
   ( BaselineChange (..), Affected (..), OpenedEpisode (..), EpisodeHandle (..)
-  , BaselineAssignment (..), lunaBaselineTaskFrom
+  , BaselineAssignment (..), baselineContext
   , Collector (..), CollectorState (..), OwnerState (..)
   , UpdateDelivery (..), IncorporationReport (..), ReportResult (..)
   , openBaselineEpisode, beginBaselineEpisode, refreshBaselineEpisode, episodeView
@@ -40,7 +40,7 @@ import Tidepool.Effects.Row (knownEffects)
 import Tidepool.Inspection (Display (..), displayRecord)
 import Tidepool.Worktree (renderGitOid)
 import Exomonad.Contrib.Types
-import Project.Work (decisionContext, lunaTaskInputFrom, taskContext)
+import Project.Work (decisionContext, taskContext)
 
 data BaselineChange = BaselineChange
   { baselineBefore :: GitOid
@@ -49,11 +49,11 @@ data BaselineChange = BaselineChange
   , baselineDecision :: AcceptedDecision
   } deriving (Show, Eq)
 
--- | The caller owns each Response. The worker is its exact target actor; the
+-- | The caller owns each Request. The worker is its exact target actor; the
 -- question is the specific affected decision, not a broad plan topic.
 data Affected result = Affected
   { affectedLabel :: Text
-  , affectedResponse :: Response result
+  , affectedResponse :: Request result
   , affectedWorker :: AgentRef
   , affectedTask :: Task
   , affectedQuestion :: Question
@@ -132,12 +132,6 @@ baselineContext input = taskContext (baselineTask input) <> Text.unlines
   [ "Incorporation receipts: if your owner sends an accepted baseline update, read the typed collector handle in baselineCollector sessionInput."
   , "Use baselineOwnerLabel sessionInput when calling submitIncorporation. A reported check name is evidence to review, not executed verification."
   ]
-
-lunaBaselineTaskFrom
-  :: Label -> ForkEffort -> WorktreeSeed -> BaselineAssignment
-  -> Branch CodingEffects BaselineAssignment result
-lunaBaselineTaskFrom label effort source =
-  lunaTaskInputFrom label effort source baselineContext
 
 data EpisodeHandle = EpisodeHandle
   { episodeActor :: R.ActorHandle Collector
