@@ -3,8 +3,8 @@ import qualified Tidepool.Actor.Record as R
 let leftTask = task "left" "Investigate the left boundary" ["src/left.rs"] "Return findings with references; no code candidate required" sourceHead
 let rightTask = task "right" "Investigate the right boundary" ["src/right.rs"] "Return findings with references; no code candidate required" sourceHead
 -- Descendants use the explicit retained prefix; the root receives task guidance.
-Right localCheckpoint <- Tidepool.Actors.Exomonad.checkpoint "recursive-batch"
-let childContext work = if groupName == "first" then FreshCtx (taskContext work) else ForkCtx localCheckpoint
+Right localCheckpoint <- Tidepool.Actors.Exomonad.checkpoint "recursive-requests"
+let childContext work = if phaseName == "first" then FreshCtx (taskContext work) else ForkCtx localCheckpoint
 let sink :: WorkSink (Outcome Text)
     sink = notifyWork me (workMessage (\result -> T.pack (show (result :: Outcome Text))))
 Right leftAgent <- spawnSubagent (childContext leftTask) (ForkWorktree currentCheckout)
@@ -19,7 +19,7 @@ Right rightAgent <- spawnSubagent (childContext rightTask) (ForkWorktree current
     , spawnInstructions = Just (projectPrompt "task"), spawnLabel = Just (taskName rightTask) })
 Right (rightRequest, rightProgress) <- requestWithProgress @WorkProgress @(Outcome Text) rightAgent rightTask
   (defaultRequestOptions { requestReporting = Silent })
-(collection, answerer) <- if groupName == "subcomponents" then do
+(collection, answerer) <- if phaseName == "subcomponents" then do
   Right (admitted, answers) <- followAnsweredWork me
     [("left", leftTask, leftRequest, leftProgress), ("right", rightTask, rightRequest, rightProgress)] sink
   pure (admitted, Just answers)

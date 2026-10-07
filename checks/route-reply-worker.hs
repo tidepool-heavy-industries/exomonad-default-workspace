@@ -5,4 +5,4 @@ Right candidateAgent <- spawnSubagent (FreshCtx (taskContext sessionInput)) (For
     { spawnModel = Just "executor", spawnEffort = Just Medium
     , spawnInstructions = Just (projectPrompt "task"), spawnLabel = Just "feature" })
 Right candidate <- request @Candidate candidateAgent sessionInput defaultRequestOptions
-forwarding <- route (awaitSettled candidate) (\settled -> case settled of { ReplyAvailable answer -> void (destination (responseValue answer)); ReplyUnavailable failure -> error (T.pack (show failure)) })
+forwarding <- route (result candidate) destination

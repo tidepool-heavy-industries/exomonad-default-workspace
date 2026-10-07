@@ -1,8 +1,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 import Tidepool.Agent.Reply (pollReply)
 let AssignedTask assignedTask = reviewBasis sessionInput
-let WatchReady incorporationResult = incorporation
-let Right (Incorporated amendment incorporatedHead incorporationChecks) = settledValue incorporationResult
+let Right (Right (Incorporated amendment incorporatedHead incorporationChecks)) = await (settlement incorporation)
 let acceptedDecision = AcceptedDecision semantics incorporatedHead "Preparation retains the boundary; visible UI acceptance remains separate." incorporationChecks
 let assignedWork = withDecision acceptedDecision assignedTask
 let remainingQuestions = resolveQuestion acceptedDecision openQuestions
