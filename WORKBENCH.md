@@ -21,7 +21,7 @@ alone does not extend lifetime. Scope exit cancels unfinished owned work while
 retaining cleanup; borrowed observers cannot cancel another owner's resource.
 
 Compose `result request` projections as `Await`; `await` observes one `Await a`
-and returns `Either WatchFailure a`. Await values compose applicatively, and
+and returns `Either AwaitError a`. Await values compose applicatively, and
 `traverse` handles a collection without a separate batch primitive. Use
 `eitherOf` when the first terminal branch should decide, including failure.
 `R.start` explicitly creates a persistent record service with actor lifetime;
@@ -34,8 +34,10 @@ instead.
 ## Children and context
 
 `spawnSubagent context workspace (defaultSpawnOptions actualSpec)` creates one
-idle `AgentRef`; spawning does not start inference. `ForkCtx checkpoint` captures
-an explicit conversation, and `FreshCtx prompt` supplies an explicit prompt.
+idle agent and returns `Either SpawnError AgentRef`; spawning does not start
+inference. A partial failure retains its cleanup handles. Capture the intended
+declarations, values, and context with `checkpoint` before choosing `ForkCtx
+captured`; `FreshCtx prompt` supplies an independent explicit prompt.
 Choose `SameDir` to share the actual writable files, index, and HEAD; choose an
 opaque `ExistingWorkspace` or `ForkWorktree seed` when the granted directory or
 selected committed source should differ. Workspace choice does not install tools
@@ -43,8 +45,9 @@ or select compiled source.
 
 Spawn and request ownership default to the parent actor's custody. A typed
 `request @Answer agent rawInput defaultRequestOptions` activates the agent and
-returns one `Request Answer`; `requestWithProgress` returns an independent typed
-progress handle when updates matter. The request handle is its control identity.
+returns `Either RequestError (Request Answer)`; a refusal keeps the already
+spawned agent available for retry or retirement. `requestWithProgress` also
+returns an independent typed progress handle when updates matter. The request handle is its control identity.
 Use `result request` as an `Await` and `await` to observe it. `withScope` creates
 a runtime-owned delimiter; resources join only when their own options explicitly
 use `InScope scope`. Request, waiting, actor, and scope cleanup remain separate
@@ -69,13 +72,6 @@ evidence retains original commands, source, and terminal receipts.
 head needs its own executed `IntegrationCheck`. Unknown output, zero test matches,
 and source mismatch stop for the owner. ReviewFlow preserves those distinctions
 through bounded repair.
-
-A `Candidate`'s `reportedChecks` are authored claims. Counted check evidence
-retains original commands, source and terminal receipts. `ReviewedCheckpoint`
-retains the original exact reviewed proof; a new integration head needs its own
-executed `IntegrationCheck`. Reported delivery, review, integration and resource
-release are separate facts. Unknown output, zero test matches and source mismatch
-stop for the owner. ReviewFlow preserves those distinctions through bounded repair.
 
 Use [RECURSIVE-WORK.md](RECURSIVE-WORK.md) for optional project delivery,
 independent implementation, exact-candidate review, and checked integration.

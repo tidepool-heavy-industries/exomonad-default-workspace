@@ -28,7 +28,7 @@ or repairs; old sessionInput is not automatically rewritten. For within-contract
 findings, the existing repair relationship determines the action:
 
 ```haskell
-let repairLabel = [label|repair-candidate|]
+let repairLabel = "repair-candidate" :: Text
 next <- repair repairLabel current latest findings
 ```
 
