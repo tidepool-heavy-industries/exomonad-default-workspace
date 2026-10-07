@@ -5,5 +5,6 @@ Right workerAgent <- spawnSubagent (FreshCtx (taskContext work)) (ForkWorktree p
   ((defaultSpawnOptions workspaceAgentSpec)
     { spawnModel = Just "luna", spawnEffort = Just Medium
     , spawnInstructions = Just (projectPrompt "task"), spawnLabel = Just (taskName work) })
-Right (worker, updates) <- requestWithProgress @WorkProgress @(Outcome Candidate) workerAgent work defaultRequestOptions
+Right (worker, updates) <- requestWithProgress @WorkProgress @(Outcome Candidate) workerAgent work
+  (defaultRequestOptions { requestReporting = Silent })
 Right readiness <- followWork [("candidate", worker, updates)] (notifyReviewReady me)

@@ -11,12 +11,14 @@ Right leftAgent <- spawnSubagent (childContext leftTask) (ForkWorktree currentCh
   ((defaultSpawnOptions workspaceAgentSpec)
     { spawnModel = Just "luna", spawnEffort = Just Medium
     , spawnInstructions = Just (projectPrompt "task"), spawnLabel = Just (taskName leftTask) })
-Right (leftRequest, leftProgress) <- requestWithProgress @WorkProgress @(Outcome Text) leftAgent leftTask defaultRequestOptions
+Right (leftRequest, leftProgress) <- requestWithProgress @WorkProgress @(Outcome Text) leftAgent leftTask
+  (defaultRequestOptions { requestReporting = Silent })
 Right rightAgent <- spawnSubagent (childContext rightTask) (ForkWorktree currentCheckout)
   ((defaultSpawnOptions workspaceAgentSpec)
     { spawnModel = Just "luna", spawnEffort = Just Medium
     , spawnInstructions = Just (projectPrompt "task"), spawnLabel = Just (taskName rightTask) })
-Right (rightRequest, rightProgress) <- requestWithProgress @WorkProgress @(Outcome Text) rightAgent rightTask defaultRequestOptions
+Right (rightRequest, rightProgress) <- requestWithProgress @WorkProgress @(Outcome Text) rightAgent rightTask
+  (defaultRequestOptions { requestReporting = Silent })
 (collection, answerer) <- if groupName == "subcomponents" then do
   Right (admitted, answers) <- followAnsweredWork me
     [("left", leftTask, leftRequest, leftProgress), ("right", rightTask, rightRequest, rightProgress)] sink
