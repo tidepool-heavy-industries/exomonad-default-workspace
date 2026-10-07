@@ -22,7 +22,7 @@ import Tidepool.Agent.Reply
   ( Replies, RequestId, Request, ResponseResult (..), ResponseState (..)
   , ResponseFailure, WorktreeEvidence (..), ExecutionReceipt (..), pollResponse, requestId )
 import Tidepool.Actors.Exomonad
-  ( AgentRef, ForkEffort, GitOid, Model, WatchLabel
+  ( AgentRef, ForkEffort, GitOid, Model
   )
 import Tidepool.Inspection (Display (..), application, displayRecord)
 import Tidepool.Worktree
@@ -289,7 +289,7 @@ data Incorporation
 data DesignSlot = DesignSlot
   { specialistPlan :: Text
   , specialistLabel :: Text
-  , specialistWatch :: WatchLabel
+  , specialistWatch :: Text
   , specialistModel :: Model
   , specialistEffort :: ForkEffort
   }

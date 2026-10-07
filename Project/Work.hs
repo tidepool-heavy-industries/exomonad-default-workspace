@@ -14,7 +14,7 @@ module Project.Work
   , WorkspaceEffects, workspaceAgentSpec, WorkAdmissionError (..)
   , implement, reviewCandidate, reviewCommit, requestReview, repair
   , candidateAtSubmission, reviewCandidateAtSubmission, admitReviewedCheckpoint
-  , requestIncorporation, consultDesign, settledValue, unownedPaths
+  , requestIncorporation, consultDesign, unownedPaths
   ) where
 
 import Control.Monad.Freer (Eff, Member)
@@ -243,7 +243,7 @@ designQuestion task candidate finding = DesignQuestion
 consultDesign
   :: (Member AgentLaunch effects, Member Replies effects, Member Watches effects)
   => DesignSlot -> DesignQuestion
-  -> Eff effects (Either WorkAdmissionError (Request DesignAnswer, Watch (Settlement DesignAnswer)))
+  -> Eff effects (Either WorkAdmissionError (Request DesignAnswer, Watch (Either ResponseFailure DesignAnswer)))
 consultDesign slot question = do
   spawned <- spawnSubagent (FreshCtx (designContext slot question))
     (ForkWorktree (atRef (GitRef (renderGitOid (questionSource question)))))
@@ -257,7 +257,7 @@ consultDesign slot question = do
       case admitted of
         Left issue -> pure (Left (WorkRequestRefused expert issue))
         Right reply -> do
-          ready <- watch (specialistWatch slot) (awaitSettled reply)
+          ready <- watch (Just (specialistWatch slot)) (settlement reply)
           pure (Right (reply, ready))
 
 designContext :: DesignSlot -> DesignQuestion -> Text
