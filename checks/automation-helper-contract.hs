@@ -21,7 +21,7 @@ import Project.AssumptionWatch (watchIncorporatedBaseline)
 import Project.ParallelInvestigate
 import Project.SlowCommandWatch (SlowHandler, SlowObservation (..))
 import Exomonad.Contrib.Types (Incorporation)
-import Tidepool.Actors.Exomonad (Actor, AgentRef, GitOid, Response)
+import Tidepool.Actors.Exomonad (Actor, AgentRef, GitOid, Request)
 import qualified Tidepool.Command as Cmd
 import Tidepool.Effects.Core (Commands (..), Jev, CommandObservation (..))
 import Tidepool.Command.Types (Job (..))
@@ -31,7 +31,7 @@ import Tidepool.Command.Types (Job (..))
 -- terminal observations and the probes not admitted to this batch.
 pendingChildExample
   :: (Member Actor effects, Member Commands effects)
-  => AgentRef -> GitOid -> Response Incorporation -> Text
+  => AgentRef -> GitOid -> Request Incorporation -> Text
   -> Eff effects (Either ProbeRefusal ProbeBatch)
 pendingChildExample owner baseline incorporation checkout = do
   void (watchIncorporatedBaseline owner baseline "pending child" incorporation)
