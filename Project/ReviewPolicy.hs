@@ -17,11 +17,6 @@ import qualified Jev.Operators as J
 import Jev.Operators (Packet ((:=)), Settled (Settled))
 import Tidepool.Actors.Exomonad
 import Tidepool.Aeson.Value (object, (.=))
-import Tidepool.Actors.Spawn
-  ( SpawnContext (..), SpawnOptions (..), Workspace (..)
-  , defaultSpawnOptions, spawnSubagent
-  )
-import Tidepool.Agent.Reply (RequestOptions (..), defaultRequestOptions)
 import Tidepool.Effects.Core (GitRef (..), Jev)
 import Tidepool.Worktree (renderGitOid)
 import Exomonad.Contrib.Types

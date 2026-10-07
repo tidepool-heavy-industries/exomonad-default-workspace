@@ -46,8 +46,6 @@ import qualified Tidepool.Command as Cmd
 import Tidepool.Actors.Exomonad
 import Tidepool.Effects.Core (GitRef (..), Jev, WorktreeHandle (..), WorktreeIntegration, ActorLocal, Commands)
 import Tidepool.Actors.Worktree (boundWorktree)
-import Tidepool.Agent.Reply
-  ( Request, RequestError, RequestOptions (..), defaultRequestOptions )
 import Tidepool.Worktree (WorktreeReceipt (..), renderGitOid, renderWorktreeError, renderWorktreeId)
 import qualified Exomonad.Contrib.Merge as Merge
 import Tidepool.Agent.Reply (requestIdNumber)
