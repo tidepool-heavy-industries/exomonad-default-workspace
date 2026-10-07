@@ -36,8 +36,8 @@ instead.
 `spawnSubagent context workspace (defaultSpawnOptions actualSpec)` creates one
 idle agent and returns `Either SpawnError AgentRef`; spawning does not start
 inference. A partial failure retains its cleanup handles. Capture the intended
-declarations, values, and context with `checkpoint` before choosing `ForkCtx
-captured`; `FreshCtx prompt` supplies an independent explicit prompt.
+declarations, values, and context with `checkpoint` before choosing
+`ForkCtx captured`; `FreshCtx prompt` supplies an independent explicit prompt.
 Choose `SameDir` to share the actual writable files, index, and HEAD; choose an
 opaque `ExistingWorkspace` or `ForkWorktree seed` when the granted directory or
 selected committed source should differ. Workspace choice does not install tools
