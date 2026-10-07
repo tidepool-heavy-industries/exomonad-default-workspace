@@ -16,7 +16,8 @@ module Exomonad.Contrib.Routing
   ( WorkActor (workSnapshot, workNotification, acknowledgeWork), WorkState (..), WorkSource (..), WorkStatus (..)
   , WorkEvent (..), WorkDelta (..), workChange, Notice (..), WorkSink (..), WorkDelivery (..), ObserverAdmission (..), noWorkDelivery, observeWork
   , WorkNoticePolicy (..), WorkPolicyReceipt (..), setWorkNoticePolicy
-  , followWork, workDefinition, readWork, finishWork, keepWork, outstandingEvidence, outstandingReviewed
+  , WorkSourceInput, projectWorkSource
+  , followWork, followWorkSources, workDefinition, readWork, finishWork, keepWork, outstandingEvidence, outstandingReviewed
   , notifyWork, workNoticeMessage, workMessage, workQuestionsMessage, withCheckpoints
   , ReviewReadiness (..), reviewReadiness, reviewReadyMessage, notifyReviewReady
   , RoutingError (..)
@@ -38,6 +39,14 @@ import Exomonad.Contrib.Actors (CoordinationEffects, coordinationActor)
 data WorkSources value = WorkSources
   { progressEvents :: R.EventSource (Text, ProgressState WorkProgress)
   , resultEvents :: R.EventSource (Text, Either ResponseFailure (ResponseResult value))
+  }
+
+-- One already-issued typed request projected into the collector's common
+-- result type. Constructing this value has no effects and admits no work.
+data WorkSourceInput value = WorkSourceInput
+  { inputName :: Text
+  , inputProgressEvents :: R.EventSource (Text, ProgressState WorkProgress)
+  , inputResultEvents :: R.EventSource (Text, Either ResponseFailure (ResponseResult value))
   }
 
 instance Semigroup (WorkSources value) where
@@ -195,6 +204,36 @@ followWork inputs sink = case workDefinition inputs sink of
   Left issue -> pure (Left issue)
   Right spec -> Right <$> R.start spec
 
+-- Project independently typed progress and results into one authored route.
+-- The receipt's request, actor and worktree evidence remains unchanged.
+projectWorkSource
+  :: Text -> (progress -> WorkProgress) -> (answer -> value)
+  -> Request answer -> Progress progress -> WorkSourceInput value
+projectWorkSource name projectProgress projectAnswer request updates = WorkSourceInput
+  { inputName = name
+  , inputProgressEvents = fmap ((,) name . projectProgressState projectProgress) (R.progress updates)
+  , inputResultEvents = fmap (mapResult name projectAnswer) (R.settlement request)
+  }
+
+projectProgressState :: (progress -> WorkProgress) -> ProgressState progress -> ProgressState WorkProgress
+projectProgressState _ ProgressPending = ProgressPending
+projectProgressState project (ProgressUpdate cursor value) = ProgressUpdate cursor (project value)
+projectProgressState _ ProgressClosed = ProgressClosed
+projectProgressState _ (ProgressRejected failure) = ProgressRejected failure
+
+mapResult :: Text -> (answer -> value)
+  -> Either ResponseFailure (ResponseResult answer)
+  -> (Text, Either ResponseFailure (ResponseResult value))
+mapResult name project = (,) name . fmap (\receipt -> receipt { responseValue = project (responseValue receipt) })
+
+followWorkSources
+  :: Member Actor effects
+  => [WorkSourceInput value] -> WorkSink value
+  -> Eff effects (Either RoutingError (ActorHandle (WorkActor value)))
+followWorkSources inputs sink = case workSourcesDefinition inputs sink of
+  Left issue -> pure (Left issue)
+  Right spec -> Right <$> R.start spec
+
 readWork :: Member Actor effects => ActorHandle (WorkActor value) -> Eff effects (WorkState value)
 readWork router = R.call (workSnapshot (R.client router)) ()
 
@@ -211,12 +250,18 @@ finishWork = R.finish
 workDefinition
   :: forall value. [(Text, Request value, Progress WorkProgress)] -> WorkSink value
   -> Either RoutingError (ActorSpec (WorkActor value) (WorkEffects value))
-workDefinition inputs sink = do
-  let names = [name | (name, _, _) <- inputs]
+workDefinition inputs sink = workSourcesDefinition
+  [projectWorkSource name id id request updates | (name, request, updates) <- inputs] sink
+
+workSourcesDefinition
+  :: [WorkSourceInput value] -> WorkSink value
+  -> Either RoutingError (ActorSpec (WorkActor value) (WorkEffects value))
+workSourcesDefinition inputs sink = do
+  let names = map inputName inputs
   validateSources names
   pure (sourceDefinition names (WorkSources
-    (mconcat [fmap ((,) name) (R.progress updates) | (name, _, updates) <- inputs])
-    (mconcat [fmap ((,) name) (R.settlement response) | (name, response, _) <- inputs])) sink)
+    (mconcat (map inputProgressEvents inputs))
+    (mconcat (map inputResultEvents inputs))) sink)
 
 sourceDefinition
   :: forall value. [Text] -> WorkSources value -> WorkSink value

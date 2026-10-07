@@ -31,13 +31,13 @@ collaboration = do
     ("candidateCommit (repairInput sessionInput) == " <> gitOidLiteral candidate <> " && remainingGates (repairInput sessionInput) == [\"open product gate\"] && repairFindings sessionInput == [\"preserve the product gate\"]")
   revised <- checkpoint (checkActor implementer) "feature.txt" "repaired\n" "repair feature"
   void $ turn (checkActor implementer) ("respond (Produced (Candidate " <> gitOidLiteral revised <> " [\"focused repair check\"] [\"open product gate\"]))")
-  void $ turn (checkActor reviewer) "state <- pollWatch repaired"
+  void $ turn (checkActor reviewer) "state <- pollResponse revision"
   script (checkActor reviewer) "project_design_question"
   expert <- activation
   check "the tagged Astra receives the repaired source and actual uncertainty" (checkModel expert == Just "gpt-6-astra" && revised `Text.isInfixOf` checkContext expert && "Does preparation preserve the boundary?" `Text.isInfixOf` checkContext expert)
   amendment <- checkpoint (checkActor expert) "plans/feature.md" "Preparation retains the open product gate.\n" "clarify acceptance"
   void $ turn (checkActor expert) ("respond (AmendPlan (PlanAmendment " <> gitOidLiteral revised <> " " <> gitOidLiteral amendment <> " [\"plans/feature.md\"] \"retain the preparation gate\" [\"feature review\"] [\"boundary evidence\"]))")
-  void $ turn (checkActor reviewer) "design <- pollWatch designReady"
+  void $ turn (checkActor reviewer) "design <- pollResponse expert"
   script (checkActor reviewer) "project_plan_incorporation"
   incorporation <- activation
   check "incorporation stays with its exact recipient" (checkActor incorporation == checkActor implementer)
@@ -45,7 +45,7 @@ collaboration = do
   plan <- readFile (checkActor implementer) "plans/feature.md"
   check "the accepted plan really reached the implementer's checkout" (plan == "Preparation retains the open product gate.\n")
   void $ turn (checkActor implementer) ("respond (Incorporated (incorporationAmendment sessionInput) " <> gitOidLiteral amendment <> " [\"read exact plan at resulting head\"])")
-  void $ turn (checkActor reviewer) "incorporation <- pollWatch planReady"
+  void $ turn (checkActor reviewer) "incorporation <- pollResponse planResponse"
   script (checkActor reviewer) "project_review_questions"
   void $ turn owner "observedQuestions <- pollProgress reviewQuestions"
   assertCell owner "coalesced attention retains both unresolved questions" "case observedQuestions of { ProgressUpdate _ progress -> map questionKey (workQuestions progress) == [\"semantics\",\"product-gate\"]; _ -> False }"

@@ -1,5 +1,5 @@
 let AssignedTask assignedTask = reviewBasis sessionInput
-let Right (Right (AmendPlan amendment)) = design
+let ResponseReady designResult = design
+let AmendPlan amendment = responseValue designResult
 let RetainedImplementer implementer = repairOwner sessionInput
 Right planResponse <- requestIncorporation implementer "incorporate-plan" assignedTask amendment
-planReady <- await (settlement planResponse)

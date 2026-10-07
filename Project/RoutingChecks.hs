@@ -70,8 +70,8 @@ mixedRequests = do
     [ "view <- readWork collection"
     , "ResponseReady textReceipt <- pollResponse textRequest"
     , "ResponseReady numberReceipt <- pollResponse numberRequest"
-    , "let textMatches = [responseExecution receipt == responseExecution textReceipt && responseWorktree receipt == responseWorktree textReceipt && responseValue receipt == responseValue textReceipt | WorkFinished \"text\" (Right receipt) <- workHistory view]"
-    , "let numberMatches = [responseExecution receipt == responseExecution numberReceipt && responseWorktree receipt == responseWorktree numberReceipt && responseValue receipt == responseValue numberReceipt | WorkFinished \"number\" (Right receipt) <- workHistory view]"
+    , "let textMatches = [responseExecution receipt == responseExecution textReceipt && responseWorktree receipt == responseWorktree textReceipt && responseValue receipt == TextResult (responseValue textReceipt) | WorkFinished \"text\" (Right receipt) <- workHistory view]"
+    , "let numberMatches = [responseExecution receipt == responseExecution numberReceipt && responseWorktree receipt == responseWorktree numberReceipt && responseValue receipt == NumberResult (responseValue numberReceipt) | WorkFinished \"number\" (Right receipt) <- workHistory view]"
     , "let checkObserved = (textMatches == [True] && numberMatches == [True] && length [() | source <- collectedWork view, Just _ <- [sourceCursor source]] == 2)"
     ]
   assertCell owner "collector retains exact receipts and progress from both supplied requests" "checkObserved"

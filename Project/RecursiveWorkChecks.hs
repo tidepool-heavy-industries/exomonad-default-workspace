@@ -56,9 +56,9 @@ nestedRequests = do
     finish actor = do
       awaitCell actor "both original sources have terminal results"
         "do { state <- readWork collection; pure (length (filter (maybe False (const True) . sourceResult) (collectedWork state)) == 2) }"
-      void $ turn actor "closed <- finishWork collection"
+      void $ turn actor "import qualified Tidepool.Actor as Actor\nclosed <- finishWork collection"
       assertCell actor "settled findings drain without retiring their workers"
-        "case closed of { Right _ -> True; _ -> False }"
+        "case closed of { Actor.Completed _ -> True; _ -> False }"
 
 -- A new review request changes both the exact source and the actor, while
 -- preserving the original scope. It must not disturb the previous checkout.
