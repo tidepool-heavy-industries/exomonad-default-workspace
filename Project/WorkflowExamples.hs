@@ -67,7 +67,7 @@ data CandidateAdmission
 admitCandidates
   :: (Member AgentLaunch effects, Member Replies effects)
   => [(Workspace, Task)]
-  -> Eff effects (Either CheckpointRefusal [CandidateAdmission])
+  -> Eff effects (Either CheckpointRefusal ([CandidateAdmission], Either CheckpointRefusal ()))
 admitCandidates work = do
   captured <- checkpoint "candidate coordination"
   case captured of
@@ -75,8 +75,8 @@ admitCandidates work = do
     Right context -> do
       idle <- mapM (spawn context) work
       admitted <- mapM activate idle
-      _ <- releaseCheckpoint context
-      pure (Right admitted)
+      released <- releaseCheckpoint context
+      pure (Right (admitted, released))
   where
     spawn context (workspace, task) = do
       ready <- spawnSubagent (ForkCtx context) workspace
