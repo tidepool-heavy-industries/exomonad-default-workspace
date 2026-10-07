@@ -279,7 +279,7 @@ reviewFlow owner task policy implementer =
       DeterministicRoute)
 
 -- The callback can ask Jev but cannot access the coordinator's private state
--- or exercise its fork, control, command, and notification effects. The
+-- or exercise its spawn, control, command, and notification effects. The
 -- coordinator alone records the result and changes the flow stage.
 reviewFlowWith
   :: AgentRef -> Task -> ReviewFlowPolicy -> Request (Outcome Candidate)

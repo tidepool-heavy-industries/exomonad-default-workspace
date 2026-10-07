@@ -2,8 +2,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeOperators #-}
 
--- Project-sized defaults for authored actor records. Runtime roles, scheduling
--- and resource authority remain with Exomonad's existing owners.
+-- Project-sized defaults for authored actor records. Scheduling and resource
+-- authority remain with Exomonad's existing owners.
 module Exomonad.Contrib.Actors (CoordinationEffects, coordinationActor) where
 
 import Control.Monad.Freer (Eff, Member)

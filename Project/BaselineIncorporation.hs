@@ -114,7 +114,7 @@ data OpenedEpisode = OpenedEpisode
 -- | A selected-context Luna receives the task and the live collector handle
 -- together. The handle is deliberately absent from rendered task context:
 -- it is an opaque capability read from typed sessionInput, not an address for
--- the model to reconstruct. Allocate the one-use handle before this fork.
+-- the model to reconstruct. Allocate the one-use handle before sending this request.
 data BaselineAssignment = BaselineAssignment
   { baselineTask :: Task
   , baselineOwnerLabel :: Text
@@ -168,16 +168,16 @@ validateBaselineFor :: BaselineChange -> Task -> Question -> [Text] -> Either Te
 validateBaselineFor change task question checks =
   validateCore change [("coordinator", task, question, checks)]
 
--- | Allocate the handle before workers fork. No baseline is selected yet.
--- This costs one resident actor and one typed assignment field per anticipated
--- episode; finish an unused handle. A handle created after a fork cannot be
--- retroactively inserted into that child's assignment.
+-- | Allocate the handle before requesting worker incorporation. No baseline is selected yet.
+-- This costs one resident actor and one typed input field per anticipated
+-- episode; finish an unused handle. An idle worker can receive this handle in
+-- a later typed request without changing its captured context.
 openBaselineEpisode :: Member Actor effects => AgentRef -> Eff effects OpenedEpisode
 openBaselineEpisode owner = do
   actor <- R.start (collector (CollectorState Nothing owner False []))
   pure (OpenedEpisode actor owner)
 
--- | Open the actor before forking workers so its handle can be assigned to
+-- | Open the actor before sending worker requests so its handle can be passed to
 -- their selected context. Begin after the caller owns active responses. One opened
 -- collector admits one accepted change; it is not a reusable episode service.
 -- An update failure is retained; it does not create a replacement request.
