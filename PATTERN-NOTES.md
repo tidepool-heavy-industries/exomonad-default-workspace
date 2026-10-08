@@ -42,7 +42,8 @@ not a forged claim that a runtime receipt has been verified.
 ## Second pass from execution and peer review
 
 The repeated-failure branch returns `Settled p Followup`, retaining the caller's
-policy in its type. Criteria now include an exhaustive `FailureKind -> Text`
+policy in its type, with `settledValue` as the explicit payload projection.
+The tag records the policy used and grants no authority. Criteria now include an exhaustive `FailureKind -> Text`
 renderer; the fetch client supplies fetch-specific alternatives instead of
 inheriting source/type-error language. Shared `triageState` and `triagePacket`
 values support both `J.ask` and exact request preparation for inspection.
@@ -55,6 +56,7 @@ responses decoded and passed through the Haskell policy. These are synthetic
 cases, not a reliability estimate or evidence of frontier turns saved.
 
 The recipe host does not install Jev. Requests were prepared in Haskell, sent to
-the live endpoint by the operator, and replayed through `J.decode` and the typed
+the live endpoint by the operator, and replayed through the original retained
+`Prepared` decoder and the typed
 planner. This verifies request construction and interpretation, not the native
 Jev effect transport. No command was retried by this trial.
