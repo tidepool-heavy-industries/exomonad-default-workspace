@@ -132,7 +132,8 @@ fieldNotes cadence theories call result
       answer <- J.ask (J.rawState promptState) packet
       case answer of
         Left _ -> pure (Abstained "jev unavailable for field notes")
-        Right judgments -> do
+        Right response -> do
+          let judgments = J.answers response
           forM_ judgments.nouls $ \(theory, judged) ->
             if noulTrips (noulPolicy theory) judged.yes
               then writeNote (noulName theory) (toJSON judged) recent
