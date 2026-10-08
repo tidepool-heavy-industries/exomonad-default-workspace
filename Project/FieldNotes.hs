@@ -6,7 +6,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeOperators #-}
 
--- | Record root-side observations about completed tool calls. The hook is
+-- | Record observations about completed tool calls. The hook is
 -- stateless: cadence comes from the runtime-issued result ordinal, and only a
 -- theory that crosses its policy creates a journal entry.
 module Project.FieldNotes
