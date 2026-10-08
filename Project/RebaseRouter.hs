@@ -52,7 +52,6 @@ import Tidepool.Effects.Core
   , WorktreeHandle (..)
   , WorktreeId
   , WorktreeRegistry
-  , WorktreeReceipt (..)
   )
 import Tidepool.Effects.Row (knownEffects)
 import Tidepool.Effects (RepoEvent, sleep)
