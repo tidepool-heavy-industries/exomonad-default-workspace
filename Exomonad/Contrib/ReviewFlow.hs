@@ -37,7 +37,7 @@ module Exomonad.Contrib.ReviewFlow
 import GHC.Generics (Generic)
 import Control.Monad.Freer (Eff, Member, raise)
 import qualified Control.Monad.Freer.State as S
-import Data.List (nub)
+import Data.List (nubBy)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Tidepool.Actor as Actor
@@ -434,7 +434,7 @@ buildReviewFlow profile prepareSource owner task policy implementer checkPlan ch
           <> fmap (RepairSettled attempt) (R.settlement attempt))
 
     cleanupReviewers request state = do
-      let agents = nub (flowReviewerAgents state)
+      let agents = nubBy (\left right -> agentIdentity left == agentIdentity right) (flowReviewerAgents state)
           prior = case flowCleanupResult state of
             Just (ReviewCleanupAttempted receipts) -> receipts
             _ -> []
@@ -444,7 +444,8 @@ buildReviewFlow profile prepareSource owner task policy implementer checkPlan ch
       R.modify' (\current -> current { flowCleanupResult = Just result })
       pure result
 
-    cleanupAgent request prior agent = case lookup agent prior of
+    cleanupAgent request prior agent = case lookup (agentIdentity agent)
+      [(agentIdentity earlier, receipts) | (earlier, receipts) <- prior] of
       Just receipts | not (shouldRetry request receipts) -> pure (agent, receipts)
       earlier -> do
         outcome <- stopAgent agent
