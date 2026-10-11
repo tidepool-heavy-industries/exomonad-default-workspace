@@ -82,7 +82,7 @@ continuation = do
   void $ turn owner "state <- R.call (reviewSnapshot (R.client flow)) ()\nlet hasQuestionHistory request = any (\\(seen, progress) -> seen == request && not (null (workQuestions progress))) (flowProgress state)"
   assertCell owner "settlement retains original receipts, progress handles and question history"
     "length (flowReviewerReceipts state) == 1 && length (flowCandidateReceipts state) == 2 && length (flowReviewerUpdates state) == 1 && length (flowRepairUpdates state) == 1 && case (flowReviewerRequests state, flowRepairRequests state) of { ([reviewer], [repair]) -> hasQuestionHistory (requestId reviewer) && hasQuestionHistory (requestId repair); _ -> False }"
-  void $ turn owner "R.finish flow"
+  void $ turn owner "R.finish flow >> pure ()"
 
 green :: Member RecipeCheck effects => Eff effects ()
 green = greenScenario "green" False
