@@ -6,6 +6,7 @@ module Project.CollaborationChecks (collaboration) where
 import Prelude hiding (readFile, writeFile)
 import Control.Monad (void)
 import Control.Monad.Freer (Eff, Member)
+import qualified Data.Text as Text
 import Tidepool.Check
 import Project.Work (workspaceAgentSpec)
 
