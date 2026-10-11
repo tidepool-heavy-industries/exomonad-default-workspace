@@ -24,7 +24,7 @@ import Tidepool.Actors.Exomonad
 import Tidepool.Effects.Core
   ( Actor, ActorContext, AgentLaunch, AgentInspection, AgentControl, Commands
   , BoundWorktree, WorktreeRegistry, WorktreeAllocation, WorktreeIntegration
-  , Notifications, Jev, ModelCall, Console, Reflect, Lookup, Source, Journal, RepoEvent, GitRef (..))
+  , Notifications, Jev, Console, Reflect, Lookup, Source, Journal, RepoEvent, GitRef (..))
 import Tidepool.Agent.Contract (AgentSpec)
 import qualified AgentSpec as Installed
 import qualified Project.Tools as Tools
@@ -39,7 +39,7 @@ import Exomonad.Workspace (workspacePrompt)
 type WorkspaceEffects =
   '[Replies, Watches, ActorContext, AgentLaunch, AgentInspection, AgentControl
    , BoundWorktree, WorktreeRegistry, WorktreeAllocation, WorktreeIntegration
-   , Notifications, Jev, ModelCall, Commands, Console, Actor, Reflect, Lookup
+   , Notifications, Jev, Commands, Console, Actor, Reflect, Lookup
    , Source, Journal, RepoEvent]
 
 workspaceAgentSpec :: AgentSpec (Tools.WorkspaceTools WorkspaceEffects) WorkspaceEffects
