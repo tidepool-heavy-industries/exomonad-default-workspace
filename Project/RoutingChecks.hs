@@ -80,7 +80,7 @@ mixedRequests = do
 refusedRoutes :: Member RecipeCheck effects => Eff effects ()
 refusedRoutes = do
   owner <- root
-  baseline <- gitHead owner
+  baseline <- git owner ["rev-parse", "HEAD"]
   void $ turn owner ("let refusalHead = " <> gitOidLiteral baseline)
   script owner "refused-routes"
   assertCell owner "invalid collector configuration returns typed domain errors without consuming requests" "(case emptyRefusal of { Left NoSources -> True; _ -> False }) && (case blankRefusal of { Left BlankSourceName -> True; _ -> False }) && (case duplicateRefusal of { Left (DuplicateSourceName \"same\") -> True; _ -> False }) && beforeRefusal == afterRefusal"
