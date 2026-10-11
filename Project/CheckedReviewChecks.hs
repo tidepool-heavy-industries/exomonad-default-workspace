@@ -43,7 +43,7 @@ continuation = do
     (checkActor repairing == checkActor implementer)
   void $ turn owner "state <- R.call (reviewSnapshot (R.client flow)) ()"
   assertCell owner "failed counted check routes to retained implementer before review"
-    "case flowRepairRequests state of { [response] -> responseActor response == responseActor worker; _ -> False }"
+    "case flowRepairRequests state of { [response] -> agentIdentity (responseActor response) == agentIdentity (responseActor worker); _ -> False }"
   assertCell (checkActor repairing) "retained implementer receives the exact failed candidate and repair assignment"
     ("let input = sessionInput :: RepairTask in candidateCommit (repairInput input) == " <> gitOidLiteral first
       <> " && taskName (repairAssignment input) == \"implement-recovery\" && planPath (repairAssignment input) == \"plans/component.md\" && not (null (repairFindings input))")
