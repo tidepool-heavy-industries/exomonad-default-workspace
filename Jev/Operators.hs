@@ -89,6 +89,16 @@ module Jev.Operators
   , JevCallError (..), JevError (..), PrepError (..), DecodeError (..), Rejection (..), ValidationIssue (..)
     -- * Recording and replay: the same operation split
   , Prepared, prepare, executePrepared, request, decode, mapResponse, responsePreview, rawUsage
+    -- * Composable observations
+  , Query, question, packet, scope, at, assessment
+  , PreparedQuery, prepareQuery, queryGroups, runQuery, runQueryWith, executeQuery, replayQuery
+  , Evaluation, result, observations, recordings, evaluationPreview
+  , RequestGroup (..), Occurrence (..), Observation (..), Recording (..)
+  , EvaluationError (..), ReplayError (..)
+  , Program, liftQuery, Strategy (..), runProgram, runProgramWith, replayProgram, programFrontier
+  , payloads, Payloads, PayloadAt, ReplacePayload
+  , choiceWeights, carriedWeights, noulWeights, scoreWeights
+  , module Jev.Core.Distribution
     -- * Types, for signatures only
   , type (::=), type (:&), type (::>), type (::*), type (:|:), Offers, Handlers, Handles, Rubric
   , Noul, Choice, Score, Each, Optional, Group
@@ -97,8 +107,16 @@ module Jev.Operators
   ) where
 
 import Control.Monad.Freer (Eff, Member)
+import Data.Profunctor (Star)
+import Jev.Core.Distribution
+import Jev.Core.Query
+  ( result, observations, recordings, queryGroups
+  , RequestGroup (..), Occurrence (..), Observation (..), Recording (..)
+  , EvaluationError (..), ReplayError (..) )
+import Jev.Core.Program (Strategy (..))
 import Data.Kind (Type)
 import Data.Text (Text)
+import qualified Data.Text as T
 import GHC.TypeLits (KnownNat, KnownSymbol)
 import Jev.Host (jevTransport)
 import Jev.Tidepool ()
@@ -106,6 +124,8 @@ import qualified Jev.Core as Core
 import Jev.Core
   ( Yes (yes), Chosen (key, mass, margin, confidence, masses), Scored (expectation, confidence, masses)
   , Alternatives, AltsOk, RubricOk, Carries (mapCarried), Cause (..), Choice, DecodeError (..), Doubt (..), Each, Optional, Field, Group
+  , payloads, Payloads, PayloadAt, ReplacePayload
+  , choiceWeights, carriedWeights, noulWeights, scoreWeights
   , FieldPath ((:/)), StatePath
   , Handles, JevError (..), Label, Lenient, Careful, Strict, Model, Noul, Packet (..), Retarget, Schema, Settled, settledValue
   , PrepError (..), Q, Score, Unique, Weighed, type (:-), type (::=), type (:&), type (::>), type (::*), type (:|:), Policy, Custom, customPolicy, PolicyError (..), Usage (..), Diagnostic (..)
@@ -511,3 +531,90 @@ resolvedModel = Core.responseModel
 
 diagnostics :: Response a -> [Diagnostic]
 diagnostics = Core.diagnostics
+
+-- Composable observation programs
+
+type Query a = Core.Query Value a
+type PreparedQuery a = Core.PreparedQuery Value a
+type Evaluation a = Core.Evaluation Value JevCallError a
+type Program a = Core.Program Value a
+
+question :: (KnownSymbol k, Core.Endpoint Value e)
+  => State t -> Label k -> Q Value e -> Query (Answers :- e)
+question = Core.question
+
+packet :: Schema Value s => State t -> s Questions -> Query (s Answers)
+packet = Core.packet
+
+scope :: Text -> Query a -> Query a
+scope = Core.scope
+
+at :: KnownSymbol k => Label k -> Query a -> Query a
+at = Core.at
+
+assessment :: (input -> State t) -> (State t -> Query output) -> Star (Core.Query Value) input output
+assessment = Core.assessment
+
+prepareQuery :: Model -> Query a -> Either PrepError (PreparedQuery a)
+prepareQuery = Core.prepareQuery
+
+runQuery :: Member Jev effs => Query a -> Eff effs (Evaluation a)
+runQuery = runQueryWith jevLatest
+
+runQueryWith :: Member Jev effs => Model -> Query a -> Eff effs (Evaluation a)
+runQueryWith model = Core.runQuery (hostSession model)
+
+executeQuery :: Member Jev effs => PreparedQuery a -> Eff effs (Evaluation a)
+executeQuery = Core.executeQuery (hostSession jevLatest)
+
+replayQuery :: PreparedQuery a -> [Recording Value JevCallError] -> Evaluation a
+replayQuery = Core.replayQuery
+
+liftQuery :: Query a -> Program a
+liftQuery = Core.liftQuery
+
+runProgram :: Member Jev effs => Strategy -> Program a -> Eff effs (Evaluation a)
+runProgram = runProgramWith jevLatest
+
+runProgramWith :: Member Jev effs => Model -> Strategy -> Program a -> Eff effs (Evaluation a)
+runProgramWith model strategy = Core.runProgram strategy (hostSession model)
+
+replayProgram :: Strategy -> Model -> Program a -> [Recording Value JevCallError] -> Evaluation a
+replayProgram = Core.replayProgram
+
+programFrontier :: Strategy -> Program a -> Either a (Query (Program a))
+programFrontier = Core.programFrontier
+
+
+instance Display (Core.PreparedQuery Value a) where
+  displayTree ready = Constructor "PreparedQuery" [("groups", displayTree (Core.queryGroups ready))]
+
+instance Display (RequestGroup Value) where
+  displayTree group = Constructor "RequestGroup"
+    [("request", previewTree (groupRequest group)), ("occurrences", displayTree (groupOccurrences group))]
+
+instance Display Occurrence where
+  displayTree occurrence = Constructor "Occurrence"
+    [("index", displayTree (occurrenceIndex occurrence)), ("scopes", displayTree (occurrenceScopes occurrence)),
+     ("questions", displayTree (occurrenceQuestions occurrence))]
+
+instance Display err => Display (Core.Evaluation Value err a) where
+  displayTree evaluation = Constructor "Evaluation"
+    [("status", either displayTree (const (StringLeaf "completed; result retained")) (result evaluation)),
+     ("observations", displayTree (observations evaluation))]
+
+instance Display err => Display (EvaluationError err) where
+  displayTree (CallFailed err) = Constructor "CallFailed" [("cause", displayTree err)]
+  displayTree (ReplayFailed err) = Constructor "ReplayFailed" [("cause", StringLeaf (show err))]
+
+instance Display err => Display (Observation Value err) where
+  displayTree observation = Constructor "Observation"
+    [("recording", displayTree (recording observation)), ("result", displayTree (observationResult observation))]
+
+instance Display err => Display (Recording Value err) where
+  displayTree retained = Constructor "Recording"
+    [("request", previewTree (recordedRequest retained)), ("occurrences", displayTree (recordedOccurrences retained)),
+     ("outcome", either displayTree previewTree (recordedOutcome retained))]
+
+evaluationPreview :: Evaluation a -> Value
+evaluationPreview = Core.evaluationPreview (String . T.pack . show)
