@@ -366,8 +366,8 @@ instance Display Usage where
     [("inputTokens", displayTree input), ("outputTokens", displayTree output)]
 
 instance Display Diagnostic where
-  displayTree (DistributionDrift question total) = Constructor "DistributionDrift"
-    [("questionId", displayTree question), ("distributionTotal", displayTree total)]
+  displayTree (DistributionDrift questionPath total) = Constructor "DistributionDrift"
+    [("questionId", displayTree questionPath), ("distributionTotal", displayTree total)]
 
 instance Display Doubt where
   displayTree (Doubt reason message) = Constructor "Jev.Doubt"
@@ -404,44 +404,44 @@ instance Display JevCallError where
 
 instance Display PrepError where
   displayTree failure = case failure of
-    EmptyOffer question -> Constructor "EmptyOffer" [("questionId", displayTree question)]
-    DuplicateKeys question keys -> Constructor "DuplicateKeys"
-      [("questionId", displayTree question), ("keys", displayTree keys)]
-    KeyCollidesWithLabel question alternativeKey -> Constructor "KeyCollidesWithLabel"
-      [("questionId", displayTree question), ("key", displayTree alternativeKey)]
-    TooManyAlternatives question count -> Constructor "TooManyAlternatives"
-      [("questionId", displayTree question), ("count", displayTree count)]
-    BadLevelCount question count -> Constructor "BadLevelCount"
-      [("questionId", displayTree question), ("count", displayTree count)]
-    DuplicateQuestionPath question -> Constructor "DuplicateQuestionPath" [("questionId", displayTree question)]
+    EmptyOffer questionPath -> Constructor "EmptyOffer" [("questionId", displayTree questionPath)]
+    DuplicateKeys questionPath keys -> Constructor "DuplicateKeys"
+      [("questionId", displayTree questionPath), ("keys", displayTree keys)]
+    KeyCollidesWithLabel questionPath alternativeKey -> Constructor "KeyCollidesWithLabel"
+      [("questionId", displayTree questionPath), ("key", displayTree alternativeKey)]
+    TooManyAlternatives questionPath count -> Constructor "TooManyAlternatives"
+      [("questionId", displayTree questionPath), ("count", displayTree count)]
+    BadLevelCount questionPath count -> Constructor "BadLevelCount"
+      [("questionId", displayTree questionPath), ("count", displayTree count)]
+    DuplicateQuestionPath questionPath -> Constructor "DuplicateQuestionPath" [("questionId", displayTree questionPath)]
     EmptyQuestionMap -> Constructor "EmptyQuestionMap" []
-    EmptyQuestionKey question -> Constructor "EmptyQuestionKey" [("questionId", displayTree question)]
+    EmptyQuestionKey questionPath -> Constructor "EmptyQuestionKey" [("questionId", displayTree questionPath)]
     BadStateShape -> Constructor "BadStateShape" []
-    BadInstructions question -> Constructor "BadInstructions" [("questionId", displayTree question)]
-    BadDescription question alternativeKey -> Constructor "BadDescription"
-      [("questionId", displayTree question), ("key", displayTree alternativeKey)]
-    BadLevel question index -> Constructor "BadLevel"
-      [("questionId", displayTree question), ("index", displayTree index)]
+    BadInstructions questionPath -> Constructor "BadInstructions" [("questionId", displayTree questionPath)]
+    BadDescription questionPath alternativeKey -> Constructor "BadDescription"
+      [("questionId", displayTree questionPath), ("key", displayTree alternativeKey)]
+    BadLevel questionPath index -> Constructor "BadLevel"
+      [("questionId", displayTree questionPath), ("index", displayTree index)]
 
 instance Display DecodeError where
   displayTree failure = case failure of
     ResponseShape message -> Constructor "ResponseShape" [("message", displayTree message)]
     ProviderRejected reason -> Constructor "ProviderRejected" [("rejection", displayTree reason)]
-    MissingAnswer question -> Constructor "MissingAnswer" [("questionId", displayTree question)]
-    UnexpectedAnswer question -> Constructor "UnexpectedAnswer" [("questionId", displayTree question)]
-    DuplicateAnswer question -> Constructor "DuplicateAnswer" [("questionId", displayTree question)]
-    WrongKind question -> Constructor "WrongKind" [("questionId", displayTree question)]
-    Malformed question message -> Constructor "Malformed"
-      [("questionId", displayTree question), ("message", displayTree message)]
-    UnknownSelection question alternativeKey -> Constructor "UnknownSelection"
-      [("questionId", displayTree question), ("key", displayTree alternativeKey)]
-    MissingMass question alternativeKey -> Constructor "MissingMass"
-      [("questionId", displayTree question), ("key", displayTree alternativeKey)]
-    ExtraMass question alternativeKey -> Constructor "ExtraMass"
-      [("questionId", displayTree question), ("key", displayTree alternativeKey)]
-    LegendMismatch question -> Constructor "LegendMismatch" [("questionId", displayTree question)]
-    ValueOutOfRange question fieldName -> Constructor "ValueOutOfRange"
-      [("questionId", displayTree question), ("field", displayTree fieldName)]
+    MissingAnswer questionPath -> Constructor "MissingAnswer" [("questionId", displayTree questionPath)]
+    UnexpectedAnswer questionPath -> Constructor "UnexpectedAnswer" [("questionId", displayTree questionPath)]
+    DuplicateAnswer questionPath -> Constructor "DuplicateAnswer" [("questionId", displayTree questionPath)]
+    WrongKind questionPath -> Constructor "WrongKind" [("questionId", displayTree questionPath)]
+    Malformed questionPath message -> Constructor "Malformed"
+      [("questionId", displayTree questionPath), ("message", displayTree message)]
+    UnknownSelection questionPath alternativeKey -> Constructor "UnknownSelection"
+      [("questionId", displayTree questionPath), ("key", displayTree alternativeKey)]
+    MissingMass questionPath alternativeKey -> Constructor "MissingMass"
+      [("questionId", displayTree questionPath), ("key", displayTree alternativeKey)]
+    ExtraMass questionPath alternativeKey -> Constructor "ExtraMass"
+      [("questionId", displayTree questionPath), ("key", displayTree alternativeKey)]
+    LegendMismatch questionPath -> Constructor "LegendMismatch" [("questionId", displayTree questionPath)]
+    ValueOutOfRange questionPath fieldName -> Constructor "ValueOutOfRange"
+      [("questionId", displayTree questionPath), ("field", displayTree fieldName)]
 
 instance Display Rejection where
   displayTree rejection = case rejection of
