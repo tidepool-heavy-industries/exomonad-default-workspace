@@ -12,7 +12,13 @@ owned captures retain their receipts. Inspect the outcome before retry. Declarat
 mutually recursive and visible to every statement, but a declaration cannot
 depend on a binding a statement in the same cell introduces. Expressions and
 bindings retain typed values without automatic rendering; declarations and
-bindings persist into later cells. Use `display value` for bounded structured
+bindings persist into later cells in the same notebook generation. The authored
+synchronous reload field publishes source, tools and workspace prompts together;
+changed configuration resets notebook names, while unchanged configuration preserves
+them. Call that field or use `reloadSource []` in a synchronous notebook. Surface
+changes require explicit cache-invalidation approval; see `doc exomonad-agent-spec`.
+Keep reusable definitions in ordinary `.hs` files. Reload does not refresh memory
+or rerun startup. Use `display value` for bounded structured
 output, and `display (show value)` for Haskell's textual `Show` form.
 
 The APIs in this skill are **shipped** and need no project module. Most names
@@ -71,17 +77,19 @@ display ("annotated, and never forced" :: Text)
 ```
 
 Agent labels are optional ordinary `Text` used for description. They do not
-select an actor, workspace, permission, or group. Agent input and reply types
-come from the actual installed `AgentSpec`; use raw typed values for requests.
+select an actor, workspace, permission, or group. Typed request sites determine
+the input and reply types; the installed `AgentSpec` provides tools and effects.
+Use raw typed values for requests.
 
 ## A cell splits into units
 
-A cell splits at column-1 lines into units that run in order. When a later unit
-fails, the receipt names what the earlier units did ("unit 1 submitted the
-reply", "unit 2 bound x"); read it before resubmitting. Keep `respond value` on
-one line with nothing after it: a trailing `.`, `$` or backquoted operator is
-rejected as a dangling operator, and a stray `) :: Text` on the next line is a
-separate unit that fails to parse.
+A cell splits at column-1 lines into ordered units, but the whole cell typechecks
+before any unit runs. A dangling `.`, `$` or backquoted operator, or a stray
+`) :: Text` on the next line, rejects the whole cell before execution. Runtime
+failure or cancellation before publication installs no names from that cell,
+though completed effects and independently owned captures remain real; inspect
+receipts before retrying. Keep `respond value` as its own single-line unit with
+nothing after it.
 
 ## Keep bindings and display selected evidence
 
