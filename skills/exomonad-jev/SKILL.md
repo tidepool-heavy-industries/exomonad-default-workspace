@@ -16,6 +16,18 @@ determines what to observe next. Compose these stages as functions, reuse packet
 as values, and retain results for later projections. Measure latency and usage
 for the workload you are building.
 
+Installed, editable compositions live in `Examples.JevComposedWorkflow`; see
+`checks/jev-composition.md` and the symbol-linked lookup example bundles. Its
+batch example retains the complete `Evaluation`, inspects every choice mass
+with original typed payloads, compares caller-defined policies, and runs an
+action only explicitly. Its lookup example ranks, expands within a bounded
+exact view, then reassesses while retaining the pool, failures and judgments.
+Its recording example saves ordinary JSON through filesystem effects, reloads
+changed source, reconstructs and replays without provider calls. Payload-only
+edits are allowed; changed question, evidence or model is refused. These are
+optional functions to adapt, with source/effect prerequisites stated beside the
+cells; successful native execution is distinct from GHC typechecking.
+
 `Jev.Operators` is the public interface for both notebook cells and authored
 modules. An explicit effect signature imports the effect type with
 `import Tidepool.Effects.Core (Jev)`. These compositions require no Project
@@ -337,10 +349,11 @@ draw a `J.many` and a `J.each` from it.
 
 ```haskell
 let candidates = [("retry", "src/Retry.hs: retry loop and backoff" :: Text), ("fetch", "src/Fetch.hs: HTTP client and timeouts")]
+let candidateKeys = map fst candidates
 let packet =
       #best := J.choice "Which file explains the timeout?"
-             (J.alt #none "No file in this set is on the timeout path" ("none", "")
-               J..| J.many #file fst snd candidates)
+             (J.alt #none "No file in this set is on the timeout path" ("none" :: Text)
+               J..| J.many #file id (\key -> maybe key id (lookup key candidates)) candidateKeys)
         :& #per := J.each fst (\(k, d) -> #relevant := J.noul ("Is " <> k <> " (" <> d <> ") on the path the timeout takes?")) candidates
         :& #fixed := J.noul "Given that the retry loop changed yesterday, is the timeout already fixed?"
 answer <- J.ask (J.state (#failure := ("fetch times out after 3 retries" :: Text))) packet
