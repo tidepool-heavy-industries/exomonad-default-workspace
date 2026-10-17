@@ -8,7 +8,7 @@ Hosted agents are ordinary typed resources. Create one with
 `ForkCtx checkpoint` for an explicit captured conversation or `FreshCtx prompt`
 for an explicit prompt. The workspace is `SameDir`, an opaque run-granted
 `ExistingWorkspace`, or `ForkWorktree seed` for a selected committed source.
-Spawn options contain the actual typed `AgentSpec`, model and effort, instructions,
+Spawn options contain the actual typed `AgentSpec`, model and reasoning, instructions,
 optional ordinary text label, lifetime, and limits. A label is descriptive; it
 does not identify an actor, workspace, or group.
 

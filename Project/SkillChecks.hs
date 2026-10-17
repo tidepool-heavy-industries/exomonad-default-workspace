@@ -27,14 +27,14 @@ skills :: Member RecipeCheck effects => Eff effects ()
 skills = do
   owner <- root
   baseline <- git owner ["rev-parse", "HEAD"]
-  void $ turn owner "let input = \"typed skill request\" :: Text\nRight worker <- spawnSubagent (FreshCtx \"Reply to one typed request.\") SameDir ((defaultSpawnOptions workspaceAgentSpec) { spawnModel = Just Luna, spawnEffort = Just Medium, spawnInstructions = Just (projectPrompt \"task\"), spawnLabel = Just \"skill-example\" })"
+  void $ turn owner "let input = \"typed skill request\" :: Text\nRight worker <- spawnSubagent (FreshCtx \"Reply to one typed request.\") SameDir ((defaultSpawnOptions workspaceAgentSpec) { spawnInstructions = Just (projectPrompt \"task\"), spawnLabel = Just \"skill-example\" })"
   requestExample <- exampleBody owner "exomonad-agent-work" 0
   -- The model-free recipe drives the reply after request admission, before
   -- executing the published example's blocking await.
   let (requestSource, replySource) = Text.breakOn "\n" requestExample
   void $ turn owner requestSource
   worker <- activation
-  check "typed request activates the explicitly spawned Luna worker" (checkModel worker == Just "gpt-6-luna")
+  check "typed request activates the explicitly spawned worker" (checkLabel worker == "skill-example")
   assertCell (checkActor worker) "the worker receives the typed skill request"
     "(sessionInput :: Text) == \"typed skill request\""
   void $ turn (checkActor worker)

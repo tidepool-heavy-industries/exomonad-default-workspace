@@ -22,7 +22,7 @@ import Tidepool.Agent.Reply
   ( Replies, RequestId, Request, ResponseResult (..), ResponseState (..)
   , ResponseFailure, WorktreeEvidence (..), ExecutionReceipt (..), pollResponse, requestId )
 import Tidepool.Actors.Exomonad
-  ( AgentRef, ForkEffort, GitOid, Model
+  ( AgentRef, Reasoning, GitOid, Model
   )
 import Tidepool.Inspection (Display (..), application, displayRecord)
 import Tidepool.Worktree
@@ -286,12 +286,13 @@ data Incorporation
   | IncorporationBlocked PlanAmendment Text [Text]
   deriving (Show, Eq)
 
+-- | Omitted specialist choices inherit the current parent selection, as in SpawnOptions.
 data DesignSlot = DesignSlot
   { specialistPlan :: Text
   , specialistLabel :: Text
   , specialistWatch :: Text
-  , specialistModel :: Model
-  , specialistEffort :: ForkEffort
+  , specialistModel :: Maybe Model
+  , specialistReasoning :: Maybe Reasoning
   }
 
 -- Evidence and questions are independently useful progress payloads. They are
