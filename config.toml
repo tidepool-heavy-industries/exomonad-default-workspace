@@ -21,7 +21,7 @@ modules = [
   "Project.AssumptionWatch", "Project.ParallelInvestigate", "Project.SlowCommandWatch",
   "Project.BackgroundCommandExample",
   "Project.NotificationTrial", "Project.WorkflowReminders", "Project.WorkflowReminderExamples",
-  "Project.Interview", "Project.WorkflowExamples", "Exomonad.Contrib.ReviewFlow",
+  "Project.Interview", "Project.RecursiveSpec", "Project.WorkflowExamples", "Exomonad.Contrib.ReviewFlow",
 ]
 spec = "AgentSpec.agentSpec"
 checks = [

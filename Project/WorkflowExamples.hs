@@ -14,6 +14,7 @@ import Control.Monad.Freer (Eff, Member)
 import Data.Text (Text)
 import qualified Tidepool.Command as Cmd
 import Tidepool.Effects.Core (Commands)
+import Tidepool.Model (Model, KnownFamily, ForkAgent)
 import Tidepool.Actors.Exomonad
 import Exomonad.Contrib.Types
 import Project.Work (workspaceAgentSpec, taskContext)
@@ -67,16 +68,16 @@ data CandidateAdmission
 -- Workspace choices can share SameDir or choose exact ForkWorktree sources.
 -- These actor-owned handles remain available in subsequent notebook cells.
 admitCandidates
-  :: (Member AgentLaunch effects, Member Replies effects)
-  => [(Workspace, Task)]
+  :: (KnownFamily family, Member (ForkAgent family) effects, Member AgentLaunch effects, Member Replies effects)
+  => Model family -> [(Workspace, Task)]
   -> Eff effects (Either CheckpointRefusal ([CandidateAdmission], Either CheckpointRefusal ()))
 admitCandidates = admitCandidatesWithLifetime ActorOwned
 
 admitCandidatesWithLifetime
-  :: (Member AgentLaunch effects, Member Replies effects)
-  => WorkerLifetime -> [(Workspace, Task)]
+  :: (KnownFamily family, Member (ForkAgent family) effects, Member AgentLaunch effects, Member Replies effects)
+  => WorkerLifetime -> Model family -> [(Workspace, Task)]
   -> Eff effects (Either CheckpointRefusal ([CandidateAdmission], Either CheckpointRefusal ()))
-admitCandidatesWithLifetime lifetime work = do
+admitCandidatesWithLifetime lifetime model work = do
   captured <- checkpoint "candidate coordination"
   case captured of
     Left issue -> pure (Left issue)
@@ -88,7 +89,7 @@ admitCandidatesWithLifetime lifetime work = do
   where
     spawn context (workspace, task) = do
       ready <- spawnSubagent (ForkCtx context) workspace
-        ((defaultSpawnOptions workspaceAgentSpec)
+        ((defaultSpawnOptions model workspaceAgentSpec)
           { spawnInstructions = Just (taskContext task), spawnLabel = Just (taskName task)
           , spawnLifetime = lifetime })
       pure (task, ready)
@@ -126,14 +127,15 @@ awaitCandidates admissions = await (traverse observe admissions)
 -- The original admissions survive an AwaitError so cleanup can be assessed
 -- against the issued handles. scopeBody and scopeCleanup remain independent.
 scopedCandidates
-  :: ( Member ResourceScopes effects, Member AgentLaunch effects
+  :: ( KnownFamily family, Member (ForkAgent family) effects
+     , Member ResourceScopes effects, Member AgentLaunch effects
      , Member Replies effects, Member Watches effects )
-  => [(Workspace, Task)]
+  => Model family -> [(Workspace, Task)]
   -> Eff effects (ScopeOutcome
        (Either CheckpointRefusal
          ([CandidateAdmission], Either CheckpointRefusal (), Either AwaitError [CandidateSettlement])))
-scopedCandidates work = withScope $ \scope -> do
-  admitted <- admitCandidatesWithLifetime (InScope scope) work
+scopedCandidates model work = withScope $ \scope -> do
+  admitted <- admitCandidatesWithLifetime (InScope scope) model work
   case admitted of
     Left refusal -> pure (Left refusal)
     Right (admissions, released) -> do

@@ -5,13 +5,13 @@ let work = (task "implement" "Implement one component" ["review-flow.txt"] "Read
       { planPath = "plans/component.md", rationale = "Exercise exact-source review and semantic repair routing" }
 Right workerAgent <- spawnSubagent (FreshCtx (taskContext work))
   (ForkWorktree (atRef (GitRef (renderGitOid sourceHead))))
-  ((defaultSpawnOptions workspaceAgentSpec)
+  ((defaultSpawnOptions currentModel workspaceAgentSpec)
     { spawnInstructions = Just (projectPrompt "task"), spawnLabel = Just (taskName work) })
 Right (worker, _updates) <- requestWithProgress @WorkProgress @(Outcome Candidate) workerAgent work defaultRequestOptions
 Right coordinatorTree <- createWorktree
   (fromRef (GitRef (renderGitOid sourceHead)) coordinatorName)
 Right coordinatorWorkspace <- workspaceFor coordinatorTree
-let policy = defaultReviewFlowPolicy
+let policy = (defaultReviewFlowPolicy currentModel)
       { flowRepairLimit = limit
       , flowSourcePlan = sourcePlan
       , flowEscalationCriteria = ["The findings require a path outside review-flow.txt or a change to the assigned acceptance."]

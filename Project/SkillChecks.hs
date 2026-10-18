@@ -27,7 +27,7 @@ skills :: Member RecipeCheck effects => Eff effects ()
 skills = do
   owner <- root
   baseline <- git owner ["rev-parse", "HEAD"]
-  void $ turn owner "let input = \"typed skill request\" :: Text\nRight worker <- spawnSubagent (FreshCtx \"Reply to one typed request.\") SameDir ((defaultSpawnOptions workspaceAgentSpec) { spawnInstructions = Just (projectPrompt \"task\"), spawnLabel = Just \"skill-example\" })"
+  void $ turn owner "let input = \"typed skill request\" :: Text\nRight worker <- spawnSubagent (FreshCtx \"Reply to one typed request.\") SameDir ((defaultSpawnOptions currentModel workspaceAgentSpec) { spawnInstructions = Just (projectPrompt \"task\"), spawnLabel = Just \"skill-example\" })"
   requestExample <- exampleBody owner "exomonad-agent-work" 0
   -- The model-free recipe drives the reply after request admission, before
   -- executing the published example's blocking await.
@@ -141,7 +141,7 @@ reviewProvenance = do
   void $ turn owner ("let base = " <> gitOidLiteral baseline <> "\nlet commit = " <> gitOidLiteral candidate)
   void $ turn owner ("let reviewInputValue = ReviewRequest (ExactScope " <> gitOidLiteral baseline
     <> " [\"review-provenance.txt\"] \"review provenance fixture\") (Candidate "
-    <> gitOidLiteral candidate <> " [] []) OwnerRepairs\nRight (reviewRequest, reviewProgress) <- requestReview \"review-provenance\" reviewInputValue")
+    <> gitOidLiteral candidate <> " [] []) OwnerRepairs\nRight (reviewRequest, reviewProgress) <- requestReview currentModel \"review-provenance\" reviewInputValue")
   reviewer <- activation
   actual <- git (checkActor reviewer) ["rev-parse", "HEAD"]
   check "review checkout is the assigned candidate" (actual == candidate)

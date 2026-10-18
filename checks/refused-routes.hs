@@ -1,7 +1,7 @@
 import qualified Project.DecisionAnswers as Answers
 import qualified Data.Text as Text
 Right producer <- spawnSubagent (FreshCtx "Wait for a short work request.") (ForkWorktree projectHead)
-  ((defaultSpawnOptions workspaceAgentSpec) { spawnInstructions = Just (projectPrompt "task"), spawnLabel = Just "refused-worker" })
+  ((defaultSpawnOptions currentModel workspaceAgentSpec) { spawnInstructions = Just (projectPrompt "task"), spawnLabel = Just "refused-worker" })
 Right (producerRequest, updates) <- requestWithProgress @WorkProgress @Text producer "No allocation" defaultRequestOptions
 let refusalTask = task "refused" "Validate relay configuration" [] "No relay allocation on refusal" refusalHead
 let issuedResults = R.settlement producerRequest

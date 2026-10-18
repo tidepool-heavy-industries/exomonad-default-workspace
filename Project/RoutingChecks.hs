@@ -281,7 +281,7 @@ reviewedCheckpoints = do
   assertCell owner "updating questions or evidence preserves the reviewed checkpoint" "workReviewed withQuestions == [reviewed] && workReviewed withEvidence == [reviewed]"
   assertCell owner "the checkpoint retains the original review response reference" "executionRequest (responseExecution (checkpointReceipt reviewed)) == requestId reviewer"
   void $ turn owner
-    "Right producerAgent <- spawnSubagent (FreshCtx \"Publish a reviewed candidate and its questions.\") (ForkWorktree projectHead) ((defaultSpawnOptions workspaceAgentSpec) { spawnInstructions = Just (projectPrompt \"task\"), spawnLabel = Just \"producer\" })\nRight (producer, updates) <- requestWithProgress @WorkProgress @Text producerAgent reviewed (defaultRequestOptions { requestReporting = Silent })\nRight collection <- traverse R.start (workDefinition [(\"producer\", R.settlement producer, R.progress updates)] (notifyWork me (workMessage id)))"
+    "Right producerAgent <- spawnSubagent (FreshCtx \"Publish a reviewed candidate and its questions.\") (ForkWorktree projectHead) ((defaultSpawnOptions currentModel workspaceAgentSpec) { spawnInstructions = Just (projectPrompt \"task\"), spawnLabel = Just \"producer\" })\nRight (producer, updates) <- requestWithProgress @WorkProgress @Text producerAgent reviewed (defaultRequestOptions { requestReporting = Silent })\nRight collection <- traverse R.start (workDefinition [(\"producer\", R.settlement producer, R.progress updates)] (notifyWork me (workMessage id)))"
   producerActor <- activation
   void $ turn (checkActor producerActor)
     "reportProgress (WorkProgress [checkpointCandidate sessionInput] [])"

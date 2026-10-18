@@ -4,6 +4,7 @@
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeApplications #-}
 
 -- Authored project requests and exact-source review. Context, workspace and
@@ -26,6 +27,7 @@ import Tidepool.Effects.Core
   , BoundWorktree, WorktreeRegistry, WorktreeAllocation, WorktreeIntegration
   , Notifications, Jev, Console, Reflect, Lookup, Source, Journal, RepoEvent, GitRef (..))
 import Tidepool.Agent.Contract (AgentSpec)
+import Tidepool.Model (Model, KnownFamily, SpawnAgent)
 import qualified AgentSpec as Installed
 import qualified Project.Tools as Tools
 import Tidepool.Worktree (renderGitOid)
@@ -118,11 +120,11 @@ updateDecision
 updateDecision response = updateRequest response . decisionContext
 
 implement
-  :: (Member AgentLaunch effects, Member Replies effects)
-  => Task -> Eff effects (Either WorkAdmissionError (Request (Outcome Candidate), Progress WorkProgress))
-implement work = do
+  :: (KnownFamily family, Member (SpawnAgent family) effects, Member AgentLaunch effects, Member Replies effects)
+  => Model family -> Task -> Eff effects (Either WorkAdmissionError (Request (Outcome Candidate), Progress WorkProgress))
+implement model work = do
   spawned <- spawnSubagent (FreshCtx (taskContext work)) (ForkWorktree currentCheckout)
-    ((defaultSpawnOptions workspaceAgentSpec)
+    ((defaultSpawnOptions model workspaceAgentSpec)
       { spawnInstructions = Just (projectPrompt "task"), spawnLabel = Just (taskName work) })
   case spawned of
     Left issue -> pure (Left (WorkSpawnRefused issue))
@@ -157,17 +159,17 @@ reviewContext request = Text.unlines
           ], repairOwnerContext OwnerRepairs)
 
 reviewCandidate
-  :: (Member AgentLaunch effects, Member Replies effects)
-  => Task -> RepairOwner -> Candidate
+  :: (KnownFamily family, Member (SpawnAgent family) effects, Member AgentLaunch effects, Member Replies effects)
+  => Model family -> Task -> RepairOwner -> Candidate
   -> Eff effects (Either WorkAdmissionError (Request (Outcome ReviewDecision), Progress WorkProgress))
-reviewCandidate work owner candidate =
-  requestReview (taskName work <> " review") (ReviewRequest (AssignedTask work) candidate owner)
+reviewCandidate model work owner candidate =
+  requestReview model (taskName work <> " review") (ReviewRequest (AssignedTask work) candidate owner)
 
 reviewCommit
-  :: (Member AgentLaunch effects, Member Replies effects)
-  => Text -> GitOid -> GitOid -> Text -> [Text]
+  :: (KnownFamily family, Member (SpawnAgent family) effects, Member AgentLaunch effects, Member Replies effects)
+  => Model family -> Text -> GitOid -> GitOid -> Text -> [Text]
   -> Eff effects (Either WorkAdmissionError (Request (Outcome ReviewDecision), Progress WorkProgress))
-reviewCommit name base commit accept owned = requestReview name $
+reviewCommit model name base commit accept owned = requestReview model name $
   ReviewRequest (ExactScope base owned accept) (Candidate commit [] []) OwnerRepairs
 
 -- After the original review response settles, a producer can call
@@ -190,13 +192,13 @@ unownedPaths base candidate owned = do
 
 -- Each exact-source review chooses its own workspace and installed API.
 requestReview
-  :: (Member AgentLaunch effects, Member Replies effects)
-  => Text -> ReviewRequest
+  :: (KnownFamily family, Member (SpawnAgent family) effects, Member AgentLaunch effects, Member Replies effects)
+  => Model family -> Text -> ReviewRequest
   -> Eff effects (Either WorkAdmissionError (Request (Outcome ReviewDecision), Progress WorkProgress))
-requestReview name input = do
+requestReview model name input = do
   spawned <- spawnSubagent (FreshCtx (reviewContext input))
     (ForkWorktree (atRef (GitRef (renderGitOid (candidateCommit (reviewInput input))))))
-    ((defaultSpawnOptions workspaceAgentSpec)
+    ((defaultSpawnOptions model workspaceAgentSpec)
       { spawnInstructions = Just (projectPrompt "review"), spawnLabel = Just name })
   case spawned of
     Left issue -> pure (Left (WorkSpawnRefused issue))
@@ -239,15 +241,15 @@ designQuestion task candidate finding = DesignQuestion
   }
 
 consultDesign
-  :: (Member AgentLaunch effects, Member Replies effects, Member Watches effects)
-  => DesignSlot -> DesignQuestion
+  :: (KnownFamily family, Member (SpawnAgent family) effects, Member AgentLaunch effects, Member Replies effects, Member Watches effects)
+  => DesignSlot family -> DesignQuestion
   -> Eff effects (Either WorkAdmissionError (Request DesignAnswer, Watch (Either ResponseFailure DesignAnswer)))
 consultDesign slot question = do
+  let model = specialistModel slot
   spawned <- spawnSubagent (FreshCtx (designContext slot question))
     (ForkWorktree (atRef (GitRef (renderGitOid (questionSource question)))))
-    ((defaultSpawnOptions workspaceAgentSpec)
-      { spawnModel = specialistModel slot, spawnReasoning = specialistReasoning slot
-      , spawnInstructions = Just (projectPrompt "specialist"), spawnLabel = Just (specialistLabel slot) })
+    ((defaultSpawnOptions model workspaceAgentSpec)
+      { spawnInstructions = Just (projectPrompt "specialist"), spawnLabel = Just (specialistLabel slot) })
   case spawned of
     Left issue -> pure (Left (WorkSpawnRefused issue))
     Right expert -> do
@@ -258,7 +260,7 @@ consultDesign slot question = do
           ready <- watch (Just (specialistWatch slot)) (settlement reply)
           pure (Right (reply, ready))
 
-designContext :: DesignSlot -> DesignQuestion -> Text
+designContext :: DesignSlot family -> DesignQuestion -> Text
 designContext slot question = Text.unlines
   [ "Declared specialist plan: " <> specialistPlan slot
   , "Waiting component: " <> questionPlan question

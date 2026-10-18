@@ -18,6 +18,7 @@ import qualified Jev.Operators as J
 import Jev.Operators (Packet ((:=)))
 import Tidepool.Actors.Exomonad
 import Tidepool.Agent.Contract (AgentSpec)
+import Tidepool.Model (Model, KnownFamily, modelPermissions, allowSpawnAgent)
 import qualified AgentSpec as Installed
 import qualified Project.Tools as Tools
 import Tidepool.Aeson.Value (object, (.=))
@@ -35,9 +36,10 @@ type ReviewerEffects = '[Replies, BoundWorktree, Commands, Lookup, Console, Jev,
 reviewerSpec :: AgentSpec (Tools.WorkspaceTools ReviewerEffects) ReviewerEffects
 reviewerSpec = Installed.agentSpec
 
-defaultReviewFlowPolicy :: ReviewFlowPolicy
-defaultReviewFlowPolicy = ReviewFlowPolicy
-  { flowRepairLimit = 2
+defaultReviewFlowPolicy :: KnownFamily family => Model family -> ReviewFlowPolicy family
+defaultReviewFlowPolicy model = ReviewFlowPolicy
+  { flowModelPermissions = modelPermissions [allowSpawnAgent model]
+  , flowRepairLimit = 2
   , flowSourcePlan = ComponentReview
   , flowReviewChoice = \_ _ -> HonorReview
   , flowEscalationCriteria = []
@@ -49,7 +51,7 @@ defaultReviewFlowPolicy = ReviewFlowPolicy
           context = reviewContext request <> reviewScope sourcePlan
             <> "\nFlow check evidence:\n" <> evidence
           source = atRef (GitRef (renderGitOid (candidateCommit (reviewInput request))))
-          spawnOptions = (defaultSpawnOptions reviewerSpec)
+          spawnOptions = (defaultSpawnOptions model reviewerSpec)
             { spawnInstructions = Just instructions
             , spawnLabel = Just "review"
             }

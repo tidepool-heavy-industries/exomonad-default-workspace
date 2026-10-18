@@ -33,7 +33,7 @@ instead.
 
 ## Children and context
 
-`spawnSubagent context workspace (defaultSpawnOptions actualSpec)` creates one
+`spawnSubagent context workspace (defaultSpawnOptions model actualSpec)` creates one
 idle agent and returns `Either SpawnError AgentRef`; spawning does not start
 inference. A partial failure retains its cleanup handles. Capture the intended
 declarations, values, and context with `checkpoint` before choosing
@@ -42,6 +42,14 @@ Choose `SameDir` to share the actual writable files, index, and HEAD; choose an
 opaque `ExistingWorkspace` or `ForkWorktree seed` when the granted directory or
 selected committed source should differ. Workspace choice does not install tools
 or select compiled source.
+
+A `Model family` selects the provider family and its typed options. Captured
+context requires `ForkAgent family`; fresh context requires `SpawnAgent family`.
+Each child starts with empty model permissions. Set `spawnPermissions` explicitly
+with `modelPermissions` and exact `allowModelCall`, `allowForkAgent`, or
+`allowSpawnAgent` selections when that child needs those operations. The family
+in its effect list expresses the operation; the permission authorizes the selected
+model. The actor-local `currentModel` value denotes its own admitted selection.
 
 Spawn and request ownership default to the parent actor's custody. A typed
 `request @Answer agent rawInput defaultRequestOptions` activates the agent and

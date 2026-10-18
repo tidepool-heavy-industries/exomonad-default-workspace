@@ -7,7 +7,7 @@ let work = (task ("implement-" <> scenario) "Repair the recovery fixture" ["revi
       { planPath = "plans/component.md", rationale = "Exercise a counted check before exact review" }
 Right workerAgent <- spawnSubagent (FreshCtx (taskContext work))
   (ForkWorktree (atRef (GitRef (renderGitOid sourceHead))))
-  ((defaultSpawnOptions workspaceAgentSpec)
+  ((defaultSpawnOptions currentModel workspaceAgentSpec)
     { spawnInstructions = Just (projectPrompt "task"), spawnLabel = Just (taskName work) })
 Right (worker, _) <- requestWithProgress @WorkProgress @(Outcome Candidate) workerAgent work defaultRequestOptions
 let check = PlanCheck "recovery" ["scripts/cargo-focused-test"] (\oid -> FocusedSpec "recovery fixture" (renderGitOid oid) "fixture" "lib" "fixture::one" 1) (Cmd.MiB 256) WithoutPreparation
@@ -17,7 +17,7 @@ integration <- if scenario == "publish" then do
   merger <- R.start (Merge.mergeInto workspace Nothing ["sh", "-c", "test \"$(cat review-flow.txt)\" = pass"])
   pure (Just (Merge.MergeTarget merger))
   else pure Nothing
-let policy = defaultReviewFlowPolicy { flowRepairLimit = 1, flowIntegration = integration }
+let policy = (defaultReviewFlowPolicy currentModel) { flowRepairLimit = 1, flowIntegration = integration }
 Right reviewRun <- startReviewFlowWith
   (\_ -> pure (ReviewRouteResult
     (if scenario == "escalate" then EscalateReview "owner scope decision" else HonorReview)

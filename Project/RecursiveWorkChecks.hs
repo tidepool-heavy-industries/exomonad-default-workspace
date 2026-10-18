@@ -67,13 +67,13 @@ revisedReview = do
   owner <- root
   base <- git owner ["rev-parse", "HEAD"]
   first <- checkpoint owner "candidate.txt" "first\n" "first review candidate"
-  void $ turn owner ("let basis = ExactScope " <> gitOidLiteral base <> " [\"candidate.txt\"] \"The candidate contains the corrected text\"\nlet original = ReviewRequest basis (Candidate " <> gitOidLiteral first <> " [] []) OwnerRepairs\nRight (review, progress) <- requestReview \"first-review\" original")
+  void $ turn owner ("let basis = ExactScope " <> gitOidLiteral base <> " [\"candidate.txt\"] \"The candidate contains the corrected text\"\nlet original = ReviewRequest basis (Candidate " <> gitOidLiteral first <> " [] []) OwnerRepairs\nRight (review, progress) <- requestReview currentModel \"first-review\" original")
   reviewer <- activation
   firstHead <- git (checkActor reviewer) ["rev-parse", "HEAD"]
   check "initial review uses the exact candidate" (firstHead == first)
   void $ turn (checkActor reviewer) "respond (Produced (Repair (reviewInput sessionInput) [\"correct the text\"]))"
   revised <- checkpoint owner "candidate.txt" "corrected\n" "revised review candidate"
-  void $ turn owner ("let revised = original { reviewInput = Candidate " <> gitOidLiteral revised <> " [] [] }\nRight (nextReview, nextProgress) <- requestReview \"revised-review\" revised")
+  void $ turn owner ("let revised = original { reviewInput = Candidate " <> gitOidLiteral revised <> " [] [] }\nRight (nextReview, nextProgress) <- requestReview currentModel \"revised-review\" revised")
   next <- activation
   nextHead <- git (checkActor next) ["rev-parse", "HEAD"]
   oldHead <- git (checkActor reviewer) ["rev-parse", "HEAD"]

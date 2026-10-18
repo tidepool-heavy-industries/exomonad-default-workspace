@@ -5,13 +5,13 @@ let work = (task "implement" "Implement one component" ["review-flow.txt"] "Read
       { planPath = "plans/component.md", rationale = "Exercise effectful review routing" }
 Right workerAgent <- spawnSubagent (FreshCtx (taskContext work))
   (ForkWorktree (atRef (GitRef (renderGitOid sourceHead))))
-  ((defaultSpawnOptions workspaceAgentSpec)
+  ((defaultSpawnOptions currentModel workspaceAgentSpec)
     { spawnInstructions = Just (projectPrompt "task"), spawnLabel = Just (taskName work) })
 Right (worker, _updates) <- requestWithProgress @WorkProgress @(Outcome Candidate) workerAgent work defaultRequestOptions
 Right coordinatorTree <- createWorktree
   (fromRef (GitRef (renderGitOid sourceHead)) coordinatorName)
 Right coordinatorWorkspace <- workspaceFor coordinatorTree
 flow <- R.start (R.withWorkspace coordinatorWorkspace
-  (reviewFlowWith me work defaultReviewFlowPolicy worker
+  (reviewFlowWith me work (defaultReviewFlowPolicy currentModel) worker
     (\_ -> pure (ReviewRouteResult
       (EscalateReview "owner must decide this scope change") DeterministicRoute))))

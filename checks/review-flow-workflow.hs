@@ -7,13 +7,13 @@ let work = (task "implement" "Implement one component" ["review-flow.txt"] "Read
       { planPath = "plans/component.md", rationale = "Review its exact committed candidate" }
 Right workerAgent <- spawnSubagent (FreshCtx (taskContext work))
   (ForkWorktree (atRef (GitRef (renderGitOid sourceHead))))
-  ((defaultSpawnOptions workspaceAgentSpec)
+  ((defaultSpawnOptions currentModel workspaceAgentSpec)
     { spawnInstructions = Just (projectPrompt "task"), spawnLabel = Just (taskName work) })
 Right (worker, _updates) <- requestWithProgress @WorkProgress @(Outcome Candidate) workerAgent work defaultRequestOptions
 Right coordinatorTree <- createWorktree
   (fromRef (GitRef (renderGitOid sourceHead)) coordinatorName)
 Right coordinatorWorkspace <- workspaceFor coordinatorTree
-let policy = defaultReviewFlowPolicy
+let policy = (defaultReviewFlowPolicy currentModel)
       { flowRepairLimit = 1
       , flowEscalationCriteria = routeCriteria }
 flow <- R.start (R.withWorkspace coordinatorWorkspace

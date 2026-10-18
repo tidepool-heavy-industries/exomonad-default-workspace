@@ -12,23 +12,22 @@ import qualified Data.Text as Text
 import Tidepool.Agent.Contract (AsyncEffects, NoTools (..), SyncEffects, defaultSpec, raiseSync, specTools)
 import qualified Tidepool.Model as Model
 
-noToolsTurn :: Model.ModelChoice choice => choice -> Model.ModelTurn NoTools effects Text
-noToolsTurn model = Model.withModel model
-  (Model.withLimits (Model.defaultLimits
+noToolsTurn :: Model.Model family -> Model.ModelTurn family NoTools effects Text
+noToolsTurn model = Model.withLimits (Model.defaultLimits
     { Model.requestLimit = Just 1, Model.toolLimit = Just 0 })
-    (Model.textTurn (defaultSpec { specTools = NoTools })
-      "Read only the supplied input. Return one concise conclusion and identify missing evidence. Do not claim to have inspected anything outside this input."))
+    (Model.textTurn model (defaultSpec { specTools = NoTools })
+      "Read only the supplied input. Return one concise conclusion and identify missing evidence. Do not claim to have inspected anything outside this input.")
 
--- Supply a choice from the frozen Exomonad.Models module.
-invokeWithModel :: (Model.ModelChoice choice, Member Model.ModelCall effects, AsyncEffects effects)
-  => choice -> Text -> Eff effects (Model.ModelResult Text)
-invokeWithModel choice = Model.invokeModel (noToolsTurn choice)
+-- Pass the exact typed selection whose model-call permission was granted.
+invokeWithModel :: (Model.KnownFamily family, Member (Model.ModelCall family) effects, AsyncEffects effects)
+  => Model.Model family -> Text -> Eff effects (Model.ModelResult Text)
+invokeWithModel model = Model.invokeModel (noToolsTurn model)
 
 -- Reuse an ordinary base-row program inside a synchronous notebook. Callbacks
 -- would still use that base row; this particular turn offers no callbacks.
-synchronousWithModel :: (Model.ModelChoice choice, Member Model.ModelCall effects, AsyncEffects effects)
-  => choice -> Text -> Eff (SyncEffects effects) (Model.ModelResult Text)
-synchronousWithModel choice = raiseSync . invokeWithModel choice
+synchronousWithModel :: (Model.KnownFamily family, Member (Model.ModelCall family) effects, AsyncEffects effects)
+  => Model.Model family -> Text -> Eff (SyncEffects effects) (Model.ModelResult Text)
+synchronousWithModel model = raiseSync . invokeWithModel model
 
 -- Keep the original ModelResult bound: this presentation includes the receipt
 -- on both success and failure, without converting a typed failure into success.

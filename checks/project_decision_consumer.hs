@@ -12,7 +12,7 @@ let newer = semantics { questionDetails = (questionDetails semantics) { question
 let changedQuestions = raiseQuestion newer openQuestions
 inspectFull (map questionKey remainingQuestions == ["product-gate"], resolveQuestion acceptedDecision changedQuestions == changedQuestions, raiseQuestion semantics firstQuestions == firstQuestions, taskSource assignedWork == incorporatedHead)
 consumerAgent <- either (error . T.pack . show) pure =<< spawnSubagent (FreshCtx (taskContext assignedWork)) (ForkWorktree (atRef (GitRef (renderGitOid (taskSource assignedWork)))))
-  ((defaultSpawnOptions workspaceAgentSpec)
+  ((defaultSpawnOptions currentModel workspaceAgentSpec)
     { spawnInstructions = Just (projectPrompt "task"), spawnLabel = Just (taskName assignedWork) })
 Right (consumer, consumerQuestions) <- requestWithProgress @WorkProgress @(Outcome Candidate) consumerAgent assignedWork defaultRequestOptions
 pollReply sessionReply

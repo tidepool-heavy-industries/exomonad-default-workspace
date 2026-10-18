@@ -15,7 +15,7 @@ changes = do
   owner <- root
   void $ turn owner "import Project.AssumptionExamples"
   void $ turn owner (Text.unlines
-    [ "Right producer <- spawnSubagent (FreshCtx \"report observed build failures\") SameDir (defaultSpawnOptions workspaceAgentSpec)"
+    [ "Right producer <- spawnSubagent (FreshCtx \"report observed build failures\") SameDir (defaultSpawnOptions currentModel workspaceAgentSpec)"
     , "Right (_, updates) <- requestWithProgress @Int @Text producer (\"report observed build failures\" :: Text) defaultRequestOptions"
     ])
   producer <- activation

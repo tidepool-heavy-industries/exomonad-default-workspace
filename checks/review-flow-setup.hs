@@ -5,7 +5,7 @@ let work = (task "implementation" "Implement the feature" ["feature.txt"] "read 
 let input = ReviewRequest (AssignedTask work) (Candidate sourceHead [] ["implementation pending"]) OwnerRepairs
 Right reviewerAgent <- spawnSubagent (FreshCtx (reviewContext input))
   (ForkWorktree (atRef (GitRef (renderGitOid sourceHead))))
-  ((defaultSpawnOptions workspaceAgentSpec)
+  ((defaultSpawnOptions currentModel workspaceAgentSpec)
     { spawnInstructions = Just (projectPrompt "review"), spawnLabel = Just "review-produced-candidate" })
 Right (reviewer, initialReviewProgress) <- requestWithProgress @WorkProgress @(Outcome ReviewDecision)
   reviewerAgent input defaultRequestOptions

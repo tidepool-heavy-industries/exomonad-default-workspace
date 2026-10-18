@@ -6,7 +6,7 @@ let candidate = Candidate sourceHead [] ["browser gate remains"]
 let reviewRequest = ReviewRequest (AssignedTask work) candidate OwnerRepairs
 Right reviewerAgent <- spawnSubagent (FreshCtx (reviewContext reviewRequest))
   (ForkWorktree (atRef (GitRef (renderGitOid sourceHead))))
-  ((defaultSpawnOptions workspaceAgentSpec)
+  ((defaultSpawnOptions currentModel workspaceAgentSpec)
     { spawnInstructions = Just (projectPrompt "review"), spawnLabel = Just "reviewed-checkpoint" })
 Right (reviewer, _) <- requestWithProgress @WorkProgress @(Outcome ReviewDecision)
   reviewerAgent reviewRequest defaultRequestOptions
