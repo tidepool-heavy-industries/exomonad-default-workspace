@@ -266,7 +266,7 @@
       "prerequisites": [
         "Examples/ModelCallWorkflow.hs"
       ],
-      "requirements": "Requires ModelCall and Console, a fixed DeepSeek backend with DeepSeekFlash or DeepSeekPro, and selected Examples.ModelCallWorkflow source. Run the cells in order in a synchronous notebook; asynchronous cells use flash or pro directly. One request, zero tools, explicit input; retain ModelResult and inspect receipt on success and typed failure. Invoking the Pro variant is another model request. See doc model-call."
+      "requirements": "Requires ModelCall and Console, the frozen Exomonad.Models choices, and selected Examples.ModelCallWorkflow source. Run the cells in order in a synchronous notebook using synchronousWithModel Models.primaryModel; asynchronous programs use invokeWithModel choice input. Choose from Models.allowedModels to select another admitted model with its provider-specific options. One request, zero tools, explicit input; retain ModelResult and inspect receipt on success and typed failure. Each invocation makes another model request. See doc model-call."
     },
     {
       "module": "Tidepool.Model",
@@ -276,7 +276,7 @@
       "prerequisites": [
         "Examples/ModelCallWorkflow.hs"
       ],
-      "requirements": "Requires ModelCall and Console, a fixed DeepSeek backend with DeepSeekFlash or DeepSeekPro, and selected Examples.ModelCallWorkflow source. Run the cells in order in a synchronous notebook; asynchronous cells use flash or pro directly. One request, zero tools, explicit input; retain ModelResult and inspect receipt on success and typed failure. Invoking the Pro variant is another model request. See doc model-call."
+      "requirements": "Requires ModelCall and Console, the frozen Exomonad.Models choices, and selected Examples.ModelCallWorkflow source. Run the cells in order in a synchronous notebook using synchronousWithModel Models.primaryModel; asynchronous programs use invokeWithModel choice input. Choose from Models.allowedModels to select another admitted model with its provider-specific options. One request, zero tools, explicit input; retain ModelResult and inspect receipt on success and typed failure. Each invocation makes another model request. See doc model-call."
     },
     {
       "module": "Tidepool.Model",
@@ -286,7 +286,7 @@
       "prerequisites": [
         "Examples/ModelCallWorkflow.hs"
       ],
-      "requirements": "Requires ModelCall and Console, a fixed DeepSeek backend with DeepSeekFlash or DeepSeekPro, and selected Examples.ModelCallWorkflow source. Run the cells in order in a synchronous notebook; asynchronous cells use flash or pro directly. One request, zero tools, explicit input; retain ModelResult and inspect receipt on success and typed failure. Invoking the Pro variant is another model request. See doc model-call."
+      "requirements": "Requires ModelCall and Console, the frozen Exomonad.Models choices, and selected Examples.ModelCallWorkflow source. Run the cells in order in a synchronous notebook using synchronousWithModel Models.primaryModel; asynchronous programs use invokeWithModel choice input. Choose from Models.allowedModels to select another admitted model with its provider-specific options. One request, zero tools, explicit input; retain ModelResult and inspect receipt on success and typed failure. Each invocation makes another model request. See doc model-call."
     },
     {
       "module": "Tidepool.Model",
@@ -296,7 +296,7 @@
       "prerequisites": [
         "Examples/ModelCallWorkflow.hs"
       ],
-      "requirements": "Requires ModelCall and Console, a fixed DeepSeek backend with DeepSeekFlash or DeepSeekPro, and selected Examples.ModelCallWorkflow source. Run the cells in order in a synchronous notebook; asynchronous cells use flash or pro directly. One request, zero tools, explicit input; retain ModelResult and inspect receipt on success and typed failure. Invoking the Pro variant is another model request. See doc model-call."
+      "requirements": "Requires ModelCall and Console, the frozen Exomonad.Models choices, and selected Examples.ModelCallWorkflow source. Run the cells in order in a synchronous notebook using synchronousWithModel Models.primaryModel; asynchronous programs use invokeWithModel choice input. Choose from Models.allowedModels to select another admitted model with its provider-specific options. One request, zero tools, explicit input; retain ModelResult and inspect receipt on success and typed failure. Each invocation makes another model request. See doc model-call."
     }
   ]
 }

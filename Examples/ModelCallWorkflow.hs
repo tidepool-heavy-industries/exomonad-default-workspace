@@ -12,30 +12,23 @@ import qualified Data.Text as Text
 import Tidepool.Agent.Contract (AsyncEffects, NoTools (..), SyncEffects, defaultSpec, raiseSync, specTools)
 import qualified Tidepool.Model as Model
 
-noToolsTurn :: Model.Model -> Model.ModelTurn NoTools effects Text
+noToolsTurn :: Model.ModelChoice choice => choice -> Model.ModelTurn NoTools effects Text
 noToolsTurn model = Model.withModel model
   (Model.withLimits (Model.defaultLimits
     { Model.requestLimit = Just 1, Model.toolLimit = Just 0 })
     (Model.textTurn (defaultSpec { specTools = NoTools })
       "Read only the supplied input. Return one concise conclusion and identify missing evidence. Do not claim to have inspected anything outside this input."))
 
-flash :: (Member Model.ModelCall effects, AsyncEffects effects)
-  => Text -> Eff effects (Model.ModelResult Text)
-flash = Model.invokeModel (noToolsTurn Model.DeepSeekFlash)
-
-pro :: (Member Model.ModelCall effects, AsyncEffects effects)
-  => Text -> Eff effects (Model.ModelResult Text)
-pro = Model.invokeModel (noToolsTurn Model.DeepSeekPro)
+-- Supply a choice from the frozen Exomonad.Models module.
+invokeWithModel :: (Model.ModelChoice choice, Member Model.ModelCall effects, AsyncEffects effects)
+  => choice -> Text -> Eff effects (Model.ModelResult Text)
+invokeWithModel choice = Model.invokeModel (noToolsTurn choice)
 
 -- Reuse an ordinary base-row program inside a synchronous notebook. Callbacks
 -- would still use that base row; this particular turn offers no callbacks.
-synchronousFlash :: (Member Model.ModelCall effects, AsyncEffects effects)
-  => Text -> Eff (SyncEffects effects) (Model.ModelResult Text)
-synchronousFlash = raiseSync . flash
-
-synchronousPro :: (Member Model.ModelCall effects, AsyncEffects effects)
-  => Text -> Eff (SyncEffects effects) (Model.ModelResult Text)
-synchronousPro = raiseSync . pro
+synchronousWithModel :: (Model.ModelChoice choice, Member Model.ModelCall effects, AsyncEffects effects)
+  => choice -> Text -> Eff (SyncEffects effects) (Model.ModelResult Text)
+synchronousWithModel choice = raiseSync . invokeWithModel choice
 
 -- Keep the original ModelResult bound: this presentation includes the receipt
 -- on both success and failure, without converting a typed failure into success.

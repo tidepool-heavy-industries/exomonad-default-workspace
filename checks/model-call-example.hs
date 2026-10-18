@@ -1,10 +1,11 @@
 import qualified Examples.ModelCallWorkflow as ModelExample
+import qualified Exomonad.Models as Models
 -- No ambient conversation, source or tools are included. Put the actual bounded
 -- evidence in this input; a path alone does not make its contents available.
 let input = "Intent: decide whether to investigate the retry loop. Evidence: one retained test failed after three retries; no implementation or timing trace is supplied." :: Text
-result <- ModelExample.synchronousFlash input
+-- Each call makes a fresh invocation.
+result <- ModelExample.synchronousWithModel Models.primaryModel input
 display (ModelExample.report result)
--- Pro variant: use ModelExample.synchronousPro input in this notebook.
--- Ordinary asynchronous programs can use ModelExample.flash or ModelExample.pro.
--- This is a fresh invocation when run: it does not reuse the first invocation's response.
+-- Choose another admitted entry from Models.allowedModels to change the model.
+-- Ordinary asynchronous programs use ModelExample.invokeWithModel choice input.
 result
