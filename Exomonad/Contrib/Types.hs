@@ -288,11 +288,11 @@ data Incorporation
   deriving (Show, Eq)
 
 -- | The specialist selection is an explicit family-indexed model value.
-data DesignSlot family = DesignSlot
+data DesignSlot modelFamily = DesignSlot
   { specialistPlan :: Text
   , specialistLabel :: Text
   , specialistWatch :: Text
-  , specialistModel :: Model family
+  , specialistModel :: Model modelFamily
   }
 
 -- Evidence and questions are independently useful progress payloads. They are

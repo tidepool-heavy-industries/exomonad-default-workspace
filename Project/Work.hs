@@ -120,8 +120,8 @@ updateDecision
 updateDecision response = updateRequest response . decisionContext
 
 implement
-  :: (KnownFamily family, Member (SpawnAgent family) effects, Member AgentLaunch effects, Member Replies effects)
-  => Model family -> Task -> Eff effects (Either WorkAdmissionError (Request (Outcome Candidate), Progress WorkProgress))
+  :: (KnownFamily modelFamily, Member (SpawnAgent modelFamily) effects, Member AgentLaunch effects, Member Replies effects)
+  => Model modelFamily -> Task -> Eff effects (Either WorkAdmissionError (Request (Outcome Candidate), Progress WorkProgress))
 implement model work = do
   spawned <- spawnSubagent (FreshCtx (taskContext work)) (ForkWorktree currentCheckout)
     ((defaultSpawnOptions model workspaceAgentSpec)
@@ -159,15 +159,15 @@ reviewContext request = Text.unlines
           ], repairOwnerContext OwnerRepairs)
 
 reviewCandidate
-  :: (KnownFamily family, Member (SpawnAgent family) effects, Member AgentLaunch effects, Member Replies effects)
-  => Model family -> Task -> RepairOwner -> Candidate
+  :: (KnownFamily modelFamily, Member (SpawnAgent modelFamily) effects, Member AgentLaunch effects, Member Replies effects)
+  => Model modelFamily -> Task -> RepairOwner -> Candidate
   -> Eff effects (Either WorkAdmissionError (Request (Outcome ReviewDecision), Progress WorkProgress))
 reviewCandidate model work owner candidate =
   requestReview model (taskName work <> " review") (ReviewRequest (AssignedTask work) candidate owner)
 
 reviewCommit
-  :: (KnownFamily family, Member (SpawnAgent family) effects, Member AgentLaunch effects, Member Replies effects)
-  => Model family -> Text -> GitOid -> GitOid -> Text -> [Text]
+  :: (KnownFamily modelFamily, Member (SpawnAgent modelFamily) effects, Member AgentLaunch effects, Member Replies effects)
+  => Model modelFamily -> Text -> GitOid -> GitOid -> Text -> [Text]
   -> Eff effects (Either WorkAdmissionError (Request (Outcome ReviewDecision), Progress WorkProgress))
 reviewCommit model name base commit accept owned = requestReview model name $
   ReviewRequest (ExactScope base owned accept) (Candidate commit [] []) OwnerRepairs
@@ -192,8 +192,8 @@ unownedPaths base candidate owned = do
 
 -- Each exact-source review chooses its own workspace and installed API.
 requestReview
-  :: (KnownFamily family, Member (SpawnAgent family) effects, Member AgentLaunch effects, Member Replies effects)
-  => Model family -> Text -> ReviewRequest
+  :: (KnownFamily modelFamily, Member (SpawnAgent modelFamily) effects, Member AgentLaunch effects, Member Replies effects)
+  => Model modelFamily -> Text -> ReviewRequest
   -> Eff effects (Either WorkAdmissionError (Request (Outcome ReviewDecision), Progress WorkProgress))
 requestReview model name input = do
   spawned <- spawnSubagent (FreshCtx (reviewContext input))
@@ -241,8 +241,8 @@ designQuestion task candidate finding = DesignQuestion
   }
 
 consultDesign
-  :: (KnownFamily family, Member (SpawnAgent family) effects, Member AgentLaunch effects, Member Replies effects, Member Watches effects)
-  => DesignSlot family -> DesignQuestion
+  :: (KnownFamily modelFamily, Member (SpawnAgent modelFamily) effects, Member AgentLaunch effects, Member Replies effects, Member Watches effects)
+  => DesignSlot modelFamily -> DesignQuestion
   -> Eff effects (Either WorkAdmissionError (Request DesignAnswer, Watch (Either ResponseFailure DesignAnswer)))
 consultDesign slot question = do
   let model = specialistModel slot
@@ -260,7 +260,7 @@ consultDesign slot question = do
           ready <- watch (Just (specialistWatch slot)) (settlement reply)
           pure (Right (reply, ready))
 
-designContext :: DesignSlot family -> DesignQuestion -> Text
+designContext :: DesignSlot modelFamily -> DesignQuestion -> Text
 designContext slot question = Text.unlines
   [ "Declared specialist plan: " <> specialistPlan slot
   , "Waiting component: " <> questionPlan question

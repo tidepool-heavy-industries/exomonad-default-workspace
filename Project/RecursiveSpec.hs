@@ -10,8 +10,8 @@ import qualified AgentSpec as Installed
 import qualified Project.Tools as Tools
 import Project.Work (WorkspaceEffects)
 
-type RecursiveEffects family = ForkAgent family ': SpawnAgent family ': WorkspaceEffects
+type RecursiveEffects modelFamily = ForkAgent modelFamily ': SpawnAgent modelFamily ': WorkspaceEffects
 
-recursiveSpec :: KnownFamily family => Model family
-  -> AgentSpec (Tools.WorkspaceTools (RecursiveEffects family)) (RecursiveEffects family)
+recursiveSpec :: KnownFamily modelFamily => Model modelFamily
+  -> AgentSpec (Tools.WorkspaceTools (RecursiveEffects modelFamily)) (RecursiveEffects modelFamily)
 recursiveSpec _ = Installed.agentSpec

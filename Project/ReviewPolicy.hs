@@ -36,7 +36,7 @@ type ReviewerEffects = '[Replies, BoundWorktree, Commands, Lookup, Console, Jev,
 reviewerSpec :: AgentSpec (Tools.WorkspaceTools ReviewerEffects) ReviewerEffects
 reviewerSpec = Installed.agentSpec
 
-defaultReviewFlowPolicy :: KnownFamily family => Model family -> ReviewFlowPolicy family
+defaultReviewFlowPolicy :: KnownFamily modelFamily => Model modelFamily -> ReviewFlowPolicy modelFamily
 defaultReviewFlowPolicy model = ReviewFlowPolicy
   { flowModelPermissions = modelPermissions [allowSpawnAgent model]
   , flowRepairLimit = 2

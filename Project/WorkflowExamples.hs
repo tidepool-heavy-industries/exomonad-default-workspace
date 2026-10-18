@@ -68,14 +68,14 @@ data CandidateAdmission
 -- Workspace choices can share SameDir or choose exact ForkWorktree sources.
 -- These actor-owned handles remain available in subsequent notebook cells.
 admitCandidates
-  :: (KnownFamily family, Member (ForkAgent family) effects, Member AgentLaunch effects, Member Replies effects)
-  => Model family -> [(Workspace, Task)]
+  :: (KnownFamily modelFamily, Member (ForkAgent modelFamily) effects, Member AgentLaunch effects, Member Replies effects)
+  => Model modelFamily -> [(Workspace, Task)]
   -> Eff effects (Either CheckpointRefusal ([CandidateAdmission], Either CheckpointRefusal ()))
 admitCandidates = admitCandidatesWithLifetime ActorOwned
 
 admitCandidatesWithLifetime
-  :: (KnownFamily family, Member (ForkAgent family) effects, Member AgentLaunch effects, Member Replies effects)
-  => WorkerLifetime -> Model family -> [(Workspace, Task)]
+  :: (KnownFamily modelFamily, Member (ForkAgent modelFamily) effects, Member AgentLaunch effects, Member Replies effects)
+  => WorkerLifetime -> Model modelFamily -> [(Workspace, Task)]
   -> Eff effects (Either CheckpointRefusal ([CandidateAdmission], Either CheckpointRefusal ()))
 admitCandidatesWithLifetime lifetime model work = do
   captured <- checkpoint model "candidate coordination"
@@ -127,10 +127,10 @@ awaitCandidates admissions = await (traverse observe admissions)
 -- The original admissions survive an AwaitError so cleanup can be assessed
 -- against the issued handles. scopeBody and scopeCleanup remain independent.
 scopedCandidates
-  :: ( KnownFamily family, Member (ForkAgent family) effects
+  :: ( KnownFamily modelFamily, Member (ForkAgent modelFamily) effects
      , Member ResourceScopes effects, Member AgentLaunch effects
      , Member Replies effects, Member Watches effects )
-  => Model family -> [(Workspace, Task)]
+  => Model modelFamily -> [(Workspace, Task)]
   -> Eff effects (ScopeOutcome
        (Either CheckpointRefusal
          ([CandidateAdmission], Either CheckpointRefusal (), Either AwaitError [CandidateSettlement])))

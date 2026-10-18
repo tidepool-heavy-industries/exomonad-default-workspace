@@ -88,7 +88,7 @@ data ReviewSourcePlan = ComponentReview | RequiresSiblingCommits [GitOid]
 
 -- Disposition may stop on a project-specific finding, but cannot upgrade a
 -- repair request into acceptance. The exact candidate check runs first.
-data ReviewFlowPolicy family = ReviewFlowPolicy
+data ReviewFlowPolicy modelFamily = ReviewFlowPolicy
   { flowModelPermissions :: ModelPermissions
   , flowRepairLimit :: Int
   , flowSourcePlan :: ReviewSourcePlan
@@ -100,7 +100,7 @@ data ReviewFlowPolicy family = ReviewFlowPolicy
   -- implementer's original request identity for correlation.
   , flowCompleted :: Maybe (R.Send ReviewCompletion)
   , flowIntegration :: Maybe Merge.MergeTarget
-  , flowReviewer :: forall effects. (Member (SpawnAgent family) effects, Member AgentLaunch effects, Member Replies effects)
+  , flowReviewer :: forall effects. (Member (SpawnAgent modelFamily) effects, Member AgentLaunch effects, Member Replies effects)
       => ReviewSourcePlan -> ReviewRequest -> Text
       -> Eff effects (Either WorkAdmissionError (Request (Outcome ReviewDecision), Progress WorkProgress))
   , flowCorrectionInstructions :: Text
@@ -240,10 +240,10 @@ data ReviewFlow mode = ReviewFlow
   , reviewEvents :: mode :- Event ReviewEvent
   } deriving Generic
 
-type ReviewFlowEffects family = R.LocalEffects ReviewFlow
-  '[SpawnAgent family, Replies, Watches, ActorContext, AgentLaunch, AgentControl, BoundWorktree
+type ReviewFlowEffects modelFamily = R.LocalEffects ReviewFlow
+  '[SpawnAgent modelFamily, Replies, Watches, ActorContext, AgentLaunch, AgentControl, BoundWorktree
    , WorktreeIntegration, Notifications, Jev, Commands, Actor, Reflect, Lookup]
-type CheckedReviewEffects family = ReviewFlowEffects family
+type CheckedReviewEffects modelFamily = ReviewFlowEffects modelFamily
 
 data ReviewRun = ReviewRun
   { reviewRunFlow :: R.ActorHandle ReviewFlow
@@ -253,10 +253,10 @@ data ReviewRun = ReviewRun
 -- Admission, exact-source check checkout, and result subscription are one
 -- reusable operation. It never waits for the implementer in the admission cell.
 startReviewFlow
-  :: (KnownFamily family, Member Actor effects, Member WorktreeAllocation effects, Member BoundWorktree effects,
+  :: (KnownFamily modelFamily, Member Actor effects, Member WorktreeAllocation effects, Member BoundWorktree effects,
       Member WorktreeRegistry effects,
       Member Replies effects)
-  => AgentRef -> Task -> ReviewFlowPolicy family -> Request (Outcome Candidate) -> [PlanCheck]
+  => AgentRef -> Task -> ReviewFlowPolicy modelFamily -> Request (Outcome Candidate) -> [PlanCheck]
   -> Eff effects (Either Text ReviewRun)
 startReviewFlow owner task policy = startReviewFlowWith
   (\context -> pure (ReviewRouteResult
@@ -264,11 +264,11 @@ startReviewFlow owner task policy = startReviewFlowWith
     DeterministicRoute)) owner task policy
 
 startReviewFlowWith
-  :: (KnownFamily family, Member Actor effects, Member WorktreeAllocation effects, Member BoundWorktree effects,
+  :: (KnownFamily modelFamily, Member Actor effects, Member WorktreeAllocation effects, Member BoundWorktree effects,
       Member WorktreeRegistry effects,
       Member Replies effects)
   => (forall selected. Member Jev selected => ReviewContext -> Eff selected ReviewRouteResult)
-  -> AgentRef -> Task -> ReviewFlowPolicy family -> Request (Outcome Candidate) -> [PlanCheck]
+  -> AgentRef -> Task -> ReviewFlowPolicy modelFamily -> Request (Outcome Candidate) -> [PlanCheck]
   -> Eff effects (Either Text ReviewRun)
 startReviewFlowWith choose owner task policy worker checks
   | null checks = pure (Left "startReviewFlow: declare focused checks")
@@ -295,8 +295,8 @@ startReviewFlowWith choose owner task policy worker checks
 -- The caller retains the dedicated managed worktree. The definition subscribes
 -- to the original implementer, including when its response already settled.
 reviewFlow
-  :: KnownFamily family => AgentRef -> Task -> ReviewFlowPolicy family -> Request (Outcome Candidate)
-  -> ActorSpec ReviewFlow (ReviewFlowEffects family)
+  :: KnownFamily modelFamily => AgentRef -> Task -> ReviewFlowPolicy modelFamily -> Request (Outcome Candidate)
+  -> ActorSpec ReviewFlow (ReviewFlowEffects modelFamily)
 reviewFlow owner task policy implementer =
   reviewFlowWith owner task policy implementer $ \context ->
     pure (ReviewRouteResult
@@ -307,9 +307,9 @@ reviewFlow owner task policy implementer =
 -- or exercise its spawn, control, command, and notification effects. The
 -- coordinator alone records the result and changes the flow stage.
 reviewFlowWith
-  :: KnownFamily family => AgentRef -> Task -> ReviewFlowPolicy family -> Request (Outcome Candidate)
+  :: KnownFamily modelFamily => AgentRef -> Task -> ReviewFlowPolicy modelFamily -> Request (Outcome Candidate)
   -> (forall effects. Member Jev effects => ReviewContext -> Eff effects ReviewRouteResult)
-  -> ActorSpec ReviewFlow (ReviewFlowEffects family)
+  -> ActorSpec ReviewFlow (ReviewFlowEffects modelFamily)
 reviewFlowWith owner task policy implementer =
   buildReviewFlow (Actor.Selected knownEffects) (\_ _ -> pure (Right ())) owner task policy implementer Nothing
 
@@ -317,15 +317,15 @@ reviewFlowWith owner task policy implementer =
 -- fast-forward, and routes original counted check evidence before review.
 -- Check failures and review findings share flowRepairLimit.
 checkedReviewFlow
-  :: KnownFamily family => AgentRef -> Task -> ReviewFlowPolicy family -> Request (Outcome Candidate)
+  :: KnownFamily modelFamily => AgentRef -> Task -> ReviewFlowPolicy modelFamily -> Request (Outcome Candidate)
   -> [PlanCheck]
   -> (forall effects. Member Jev effects => ReviewContext -> Eff effects ReviewRouteResult)
-  -> ActorSpec ReviewFlow (CheckedReviewEffects family)
+  -> ActorSpec ReviewFlow (CheckedReviewEffects modelFamily)
 checkedReviewFlow owner task policy implementer checks =
   buildReviewFlow (Actor.Selected knownEffects) prepareCheckSource owner task policy implementer (Just checks)
 
 buildReviewFlow
-  :: (KnownFamily family, Member (SpawnAgent family) effects
+  :: (KnownFamily modelFamily, Member (SpawnAgent modelFamily) effects
      , Member Replies effects, Member Actor effects, Member Notifications effects
      , Member AgentLaunch effects, Member AgentControl effects
   , Member BoundWorktree effects, Member WorktreeIntegration effects
@@ -333,7 +333,7 @@ buildReviewFlow
      , Member (ActorLocal (R.Message ReviewFlow)) effects)
   => Actor.EffectProfile (R.Message ReviewFlow) effects
   -> (Candidate -> WorktreeEvidence -> Eff effects (Either CheckSourceRefusal ()))
-  -> AgentRef -> Task -> ReviewFlowPolicy family -> Request (Outcome Candidate)
+  -> AgentRef -> Task -> ReviewFlowPolicy modelFamily -> Request (Outcome Candidate)
   -> Maybe [PlanCheck]
   -> (forall selected. Member Jev selected => ReviewContext -> Eff selected ReviewRouteResult)
   -> ActorSpec ReviewFlow effects
