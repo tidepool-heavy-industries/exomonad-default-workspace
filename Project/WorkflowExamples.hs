@@ -78,7 +78,7 @@ admitCandidatesWithLifetime
   => WorkerLifetime -> Model family -> [(Workspace, Task)]
   -> Eff effects (Either CheckpointRefusal ([CandidateAdmission], Either CheckpointRefusal ()))
 admitCandidatesWithLifetime lifetime model work = do
-  captured <- checkpoint "candidate coordination"
+  captured <- checkpoint model "candidate coordination"
   case captured of
     Left issue -> pure (Left issue)
     Right context -> do

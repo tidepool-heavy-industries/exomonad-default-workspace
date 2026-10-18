@@ -5,7 +5,7 @@ description: Compose hosted agents with typed requests, shared or forked workspa
 
 Hosted agents are ordinary typed resources. Create one with
 `spawnSubagent context workspace (defaultSpawnOptions model actualSpec)`. Context is
-`ForkCtx checkpoint` for an explicit captured conversation or `FreshCtx prompt`
+`ForkCtx captured` after `checkpoint model label` for an explicit captured conversation or `FreshCtx prompt`
 for an explicit prompt. The workspace is `SameDir`, an opaque run-granted
 `ExistingWorkspace`, or `ForkWorktree seed` for a selected committed source.
 A `Model family` carries its provider-specific options. `ForkCtx` requires
