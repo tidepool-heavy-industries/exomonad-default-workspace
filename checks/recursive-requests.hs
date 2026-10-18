@@ -5,7 +5,7 @@ import Tidepool.Model (modelPermissions, allowForkAgent, allowSpawnAgent)
 let leftTask = task "left" "Investigate the left boundary" ["src/left.rs"] "Return findings with references; no code candidate required" sourceHead
 let rightTask = task "right" "Investigate the right boundary" ["src/right.rs"] "Return findings with references; no code candidate required" sourceHead
 -- Descendants use the explicit retained prefix; the root receives task guidance.
-Right localCheckpoint <- Tidepool.Actors.Exomonad.checkpoint "recursive-requests"
+Right localCheckpoint <- Recursive.captureContext currentModel "recursive-requests"
 let childOptions work = (defaultSpawnOptions currentModel (Recursive.recursiveSpec currentModel))
       { spawnPermissions = modelPermissions [allowForkAgent currentModel, allowSpawnAgent currentModel]
       , spawnInstructions = Just (projectPrompt "task"), spawnLabel = Just (taskName work) }
