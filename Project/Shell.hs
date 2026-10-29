@@ -21,7 +21,6 @@ module Project.Shell
     OutputSnapshotIssue (..),
     section,
     sectionPage,
-    estimatedTokens,
     splitSections,
     rawLineThreshold,
   )
@@ -41,14 +40,13 @@ import Tidepool.Effects.Core (Commands, Jev, Reflect)
 
 -- Configuration is ordinary Haskell on purpose: a workspace can tune these
 -- values and reload its spec without changing a runtime protocol.
-rawLineThreshold, sectionTokens, maximumScoredTokens :: Int
+rawLineThreshold, sectionTokens :: Int
 -- 'Project.Watchdog.trivialCall' abstains before asking Jev when a
 -- finished, non-destructive call's complete frozen payload is no longer than
 -- this many lines. Presentation itself no longer gates on line count: output
 -- that fits 'max_output_bytes' is shown whole regardless of line count.
 rawLineThreshold = 15
 sectionTokens = 512
-maximumScoredTokens = 262144
 
 data OutputSnapshot = OutputSnapshot
   { snapshotJob :: Cmd.Job,
@@ -79,8 +77,7 @@ data Section = Section
     sectionStream :: Cmd.CommandStream,
     sectionStart :: Int,
     sectionEnd :: Int,
-    sectionText :: Text,
-    sectionScored :: Bool
+    sectionText :: Text
   }
   deriving (Eq, Show)
 
@@ -96,10 +93,6 @@ afterTool call result = case (fromJSON (toolResultValue result), fromJSON (toolC
   (Success Command.ObservedCommand{}, Success Command.Execute{Command.focus = Just focus}) ->
     Selection.selectRelevantChunks Selection.defaultSelectionConfig focus call result
   _ -> pure NoAnnotation
-
--- | Unicode scalar count times 0.25, rounded up.
-estimatedTokens :: Text -> Int
-estimatedTokens text = (T.length text + 3) `div` 4
 
 -- | Deterministic line-aware partitioning. A line longer than one section is
 -- split at the scalar boundary; otherwise the last newline within the budget
@@ -132,30 +125,7 @@ loadSections frozen initial = do
     stderrText <- err
     let pieces = [(Cmd.Stdout, stdoutText), (Cmd.Stderr, stderrText)]
         numbered = assignSections pieces
-    pure (applyScoringCeiling (maximumScoredTokens * 4) numbered)
-
-applyScoringCeiling :: Int -> [Section] -> [Section]
-applyScoringCeiling limit sections = zipWith renumber [1 ..] (snd (mapAccum split 0 sections) >>= id)
-  where
-    renumber ident section' = section' {sectionId = SectionId ident}
-    split used section'
-      | used >= limit = (used, [section' {sectionScored = False}])
-      | T.length (sectionText section') <= limit - used =
-          (used + T.length (sectionText section'), [section' {sectionScored = True}])
-      | otherwise =
-          let scalarCount = limit - used
-              (scoredText, remainingText) = T.splitAt scalarCount (sectionText section')
-              boundary = sectionStart section' + utf8Bytes scoredText
-              scored = section' {sectionEnd = boundary, sectionText = scoredText, sectionScored = True}
-              remainder = section' {sectionStart = boundary, sectionText = remainingText, sectionScored = False}
-           in (limit, [scored, remainder])
-
-mapAccum :: (s -> a -> (s, b)) -> s -> [a] -> (s, [b])
-mapAccum _ state [] = (state, [])
-mapAccum step state (value : values) =
-  let (next, result) = step state value
-      (final, rest) = mapAccum step next values
-   in (final, result : rest)
+    pure numbered
 
 assignSections :: [(Cmd.CommandStream, Text)] -> [Section]
 assignSections streams = snd (foldl addStream (1, []) streams)
@@ -167,7 +137,7 @@ assignSections streams = snd (foldl addStream (1, []) streams)
     addPart _ (offset, parts) part =
       let bytes = utf8Bytes part
        in (offset + bytes, parts <> [(offset, offset + bytes, part)])
-    number stream ident (start, end, text) = Section (SectionId ident) stream start end text True
+    number stream ident (start, end, text) = Section (SectionId ident) stream start end text
 
 readFrozen :: Member Commands effects => OutputSnapshot -> Cmd.CommandStream -> Int -> Maybe Cmd.CommandPage -> Eff effects (Either OutputSnapshotIssue Text)
 readFrozen frozen stream endpoint initial = case initial of

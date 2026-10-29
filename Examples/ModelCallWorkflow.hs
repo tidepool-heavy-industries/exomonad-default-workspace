@@ -9,7 +9,7 @@ module Examples.ModelCallWorkflow where
 import Control.Monad.Freer (Eff, Member)
 import Data.Text (Text)
 import qualified Data.Text as Text
-import Tidepool.Agent.Contract (AsyncEffects, NoTools (..), SyncEffects, defaultSpec, raiseSync, specTools)
+import Tidepool.Agent.Contract (ConcurrentEffects, NoTools (..), ContextOrderedEffects, defaultSpec, raiseContextOrdered, specTools)
 import qualified Tidepool.Model as Model
 
 noToolsTurn :: Model.Model modelFamily -> Model.ModelTurn modelFamily NoTools effects Text
@@ -19,15 +19,15 @@ noToolsTurn model = Model.withLimits (Model.defaultLimits
       "Read only the supplied input. Return one concise conclusion and identify missing evidence. Do not claim to have inspected anything outside this input.")
 
 -- Pass the exact typed selection whose model-call permission was granted.
-invokeWithModel :: (Model.KnownFamily modelFamily, Member (Model.ModelCall modelFamily) effects, AsyncEffects effects)
+invokeWithModel :: (Model.KnownFamily modelFamily, Member (Model.ModelCall modelFamily) effects, ConcurrentEffects effects)
   => Model.Model modelFamily -> Text -> Eff effects (Model.ModelResult Text)
 invokeWithModel model = Model.invokeModel (noToolsTurn model)
 
 -- Reuse an ordinary base-row program inside a synchronous notebook. Callbacks
 -- would still use that base row; this particular turn offers no callbacks.
-synchronousWithModel :: (Model.KnownFamily modelFamily, Member (Model.ModelCall modelFamily) effects, AsyncEffects effects)
-  => Model.Model modelFamily -> Text -> Eff (SyncEffects effects) (Model.ModelResult Text)
-synchronousWithModel model = raiseSync . invokeWithModel model
+synchronousWithModel :: (Model.KnownFamily modelFamily, Member (Model.ModelCall modelFamily) effects, ConcurrentEffects effects)
+  => Model.Model modelFamily -> Text -> Eff (ContextOrderedEffects effects) (Model.ModelResult Text)
+synchronousWithModel model = raiseContextOrdered . invokeWithModel model
 
 -- Keep the original ModelResult bound: this presentation includes the receipt
 -- on both success and failure, without converting a typed failure into success.

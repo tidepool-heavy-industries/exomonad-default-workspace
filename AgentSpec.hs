@@ -11,7 +11,7 @@ import Tidepool.Effects.Core (BoundWorktree, Commands, Console, Jev, Reflect)
 import Tidepool.Agent.Reply (Replies)
 
 agentSpec ::
-  ( KnownToolEffects effects, AsyncEffects effects
+  ( KnownToolEffects effects, ConcurrentEffects effects
   , Member Commands effects, Member Console effects, Member Jev effects
   , Member Reflect effects
   , Member Replies effects, Member BoundWorktree effects

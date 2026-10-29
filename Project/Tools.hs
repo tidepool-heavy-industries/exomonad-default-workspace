@@ -7,7 +7,7 @@ module Project.Tools (WorkspaceTools (..), tools) where
 import Control.Monad.Freer (Eff, Member)
 import GHC.Generics (Generic)
 import Tidepool.Agent.Contract
-  ( AsServerT, HaskellTools, haskellTools, KnownToolEffects, AsyncEffects
+  ( AsServerT, HaskellTools, haskellTools, KnownToolEffects, ConcurrentEffects
   , type (:-), Sync, Call, ReloadInput, ReloadError, ReloadOutcome, standardReload )
 import Tidepool.Effects.Core (BoundWorktree, Commands, Console, Jev, Reflect)
 import Tidepool.Agent.Reply (Replies)
@@ -24,7 +24,7 @@ data WorkspaceTools effects mode = WorkspaceTools
   deriving (Generic)
 
 tools ::
-  ( KnownToolEffects effects, AsyncEffects effects
+  ( KnownToolEffects effects, ConcurrentEffects effects
   , Member Commands effects, Member Console effects, Member Jev effects, Member Reflect effects
   , Member Replies effects, Member BoundWorktree effects
   ) =>
