@@ -77,24 +77,25 @@ preserving the invocation and presenting output once. Explicit `yield_time_ms`
 job is still live, the tool detaches it to actor-owned lifetime before returning.
 `background: true` starts actor-owned work and returns immediately with completion
 delivery; focus, yield and output-budget presentation options do not apply there.
-In Haskell, `Cmd.observe`, `Cmd.observeWith` and `Cmd.observeCompletion`
+In Haskell, `Cmd.observe` and `Cmd.observeCompletion`
 return bounded status normally and never detach. Explicit ownership transfer is
 required before returning unfinished owned work. Use ordinary `Cmd.await` for a
 dependent continuation, or completion events for ongoing observers. Waiting alone
 does not collect test evidence.
-`max_output_bytes` is a byte budget, not a token count. Direct execution responses
-use at most 32 KiB (default 32 KiB). Output that fits `max_output_bytes` is shown
-whole. Without `focus`, output over budget is shown as a head and a tail with a
-marker naming the omitted byte range per stream, plus a recovery pointer; no
-Jev call and no sectioning happen on this path. `focus` filters the output to
-the sections relevant to that text (example: "the failing test and its
-assertion"): the output is split into sections, each scored by Jev for
-relevance to the focus and recent conversation, and the highest-relevance
-sections are packed to fit `max_output_bytes`, with an `omitted:` marker
-naming the sections left out. A `focus`ed call still shows everything, without
-scoring, when it already fits the budget. Shortened
-output is recoverable only to the extent the job still retains it; follow the
-reported output position or gap. Do not rerun merely to obtain hidden output.
+`max_output_bytes` bounds the native display, including status and recovery
+instructions (1024..32768 bytes, default 32 KiB). Large streams are shown as
+bounded UTF-8 prefixes with their original byte positions and frozen endpoints.
+Use the issued `session_id` and `read_output` to inspect retained output; do not
+rerun a command to obtain hidden text. Retention loss and incomplete output are
+reported separately from process outcome and cleanup.
+
+`focus` and `intent` are available to the workspace's optional `afterTool` hook.
+`Project.Shell.afterTool` can select relevant chunks from the bounded display when
+the call has an authoritative retained result handle. It does not read or score
+the complete command streams. Explicit frozen snapshots and section inspection
+remain available for a later semantic question. A display selection does not
+give the cell a typed Jev answer; ask explicitly with `J.ask` when later program
+behavior depends on a semantic classification.
 
 Use Haskell for reusable command values, data-dependent follow-ups, or typed
 completion routing. `Cmd` is `Tidepool.Command`; `bash`, `withMemory`, `MiB`,
