@@ -139,9 +139,11 @@ selectRelevantChunks
 selectRelevantChunks config intent call result =
   case selectionConfigIssue config of
     Just issue -> pure (Abstained ("invalid context selection config: " <> issue))
-    Nothing -> selectValidated
+    Nothing -> case toolResultHandle result of
+      Nothing -> pure (Abstained "canonical tool result is unavailable; keeping the displayed result unchanged")
+      Just handle -> selectValidated handle
   where
-    selectValidated
+    selectValidated handle
       | T.null (T.strip intent) = pure (Abstained "context selection needs explicit intent")
       | lineCount < minimumLines config = pure (Abstained "displayed tool result is small enough to keep unchanged")
       | T.length output > maximumInputCharacters config =
@@ -156,7 +158,7 @@ selectRelevantChunks config intent call result =
               let history = recentContext (maximumHistoryCharacters config) (recentTurnCount config) turns
                in if T.null (T.strip history)
                     then pure (Abstained "recent conversation has no usable user or assistant context")
-                    else judge history
+                    else judge handle history
     output = toolResultOutput result
     lineCount = length (T.lines output)
     chunks =
@@ -177,7 +179,7 @@ selectRelevantChunks config intent call result =
         :& #relevant := J.noul
           ("Is this numbered chunk useful for satisfying intent? Judge the whole chunk and do not assume "
             <> "anything about omitted text.\nChunk:\n" <> chunkText chunk)
-    judge history = do
+    judge handle history = do
       answer <-
         J.ask
           (J.rawState (object
@@ -219,10 +221,10 @@ selectRelevantChunks config intent call result =
                             <> T.pack (show (maximumHistoryCharacters config)) <> " characters from "
                             <> T.pack (show (recentTurnCount config)) <> " completed turns. "
                             <> "The supplied tool result remains available as "
-                            <> toolResultHandle result <> ".\n\n"
+                            <> handle <> ".\n\n"
                             <> T.intercalate "\n" (map chunkText selected)
                         )
-                        (toolResultHandle result)
+                        handle
 
 -- Keep provider/transport bodies out of status: they may contain request
 -- details. The class still identifies the failing boundary.

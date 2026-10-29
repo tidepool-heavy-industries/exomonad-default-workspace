@@ -398,7 +398,7 @@ escalationEvidence call result =
     <> "Tool arguments (JSON prefix, at most 1200 characters):\n"
     <> T.take 1200 (encodeValue (toolCallArguments call))
     <> "\n" <> outputSection
-    <> "\nResult reference (held by the child): " <> toolResultHandle result
+    <> "\nResult reference (held by the child): " <> maybe "unavailable" id (toolResultHandle result)
   where
     output = toolResultOutput result
     total = T.length output

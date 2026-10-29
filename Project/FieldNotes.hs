@@ -110,7 +110,7 @@ fieldNotes cadence theories call result
             [ "current_call" .= object
                 [ "tool" .= Text.take 120 (toolCallName call)
                 , "arguments" .= boundedValue 4 1600 (toolCallArguments call)
-                , "result_handle" .= Text.take 200 (toolResultHandle result)
+                , "result_handle" .= fmap (Text.take 200) (toolResultHandle result)
                 , "result_ordinal" .= toolResultOrdinal result
                 ]
             , "current_result" .= Text.take 3000 (toolResultOutput result)
@@ -142,7 +142,7 @@ fieldNotes cadence theories call result
           pure NoAnnotation
 
     writeNote name typedAnswer recent =
-      record name (toolResultHandle result)
+      record name (maybe "unavailable" id (toolResultHandle result))
         (object
           [ "answer" .= typedAnswer
           , "tool" .= Text.take 120 (toolCallName call)
