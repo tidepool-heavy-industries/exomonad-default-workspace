@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Project.ReviewFlowChecks (oneComponent, failurePaths, sourcePreflight, emptyFindings, effectfulRouting, workflowExample, lateCandidate, replacement) where
+module Project.ReviewFlowChecks (oneComponent, failurePaths, sourcePreflight, emptyFindings, effectfulRouting, workflowExample, lateCandidate, reviewerProgress) where
 
 import Prelude hiding (readFile, writeFile)
 import Control.Monad (void)
@@ -346,30 +346,30 @@ lateCandidate = do
     "length (flowCandidateReceipts state) == 1 && length (flowReviewerReceipts state) == 1 && case flowReviewedProof state of { Just _ -> True; _ -> False }"
   void $ turn owner "R.finish flow"
 
--- Original dynamic sources and checkpointed state survive record replacement.
-replacement :: Member RecipeCheck effects => Eff effects ()
-replacement = do
+-- Reviewer progress and settlement share the original dynamic subscription.
+reviewerProgress :: Member RecipeCheck effects => Eff effects ()
+reviewerProgress = do
   owner <- root
   baseline <- git owner ["rev-parse", "HEAD"]
   void $ turn owner ("let sourceHead = " <> gitOidLiteral baseline
-    <> "\nlet limit = 1 :: Int\nlet campaignName = \"review-replacement\" :: Text"
-    <> "\nlet coordinatorName = \"review-replacement-coordinator\" :: Text"
+    <> "\nlet limit = 1 :: Int\nlet campaignName = \"review-progress\" :: Text"
+    <> "\nlet coordinatorName = \"review-progress-coordinator\" :: Text"
     <> "\nlet sourcePlan = ComponentReview")
   script owner "review-flow-loop"
   worker <- activation
-  candidate <- checkpoint (checkActor worker) "review-flow.txt" "replacement candidate\n" "source before flow replacement"
+  candidate <- checkpoint (checkActor worker) "review-flow.txt" "progress candidate\n" "source before reviewer progress"
   void $ turn (checkActor worker) ("respond (Produced (Candidate " <> gitOidLiteral candidate <> " [] []))")
   reviewer <- activation
-  void $ turn owner "before <- R.call (reviewSnapshot (R.client flow)) ()\nflow <- R.replace flow flowDefinition"
+  void $ turn owner "before <- R.call (reviewSnapshot (R.client flow)) ()"
   void $ turn (checkActor reviewer)
-    "let question = Question \"after-replacement\" (DesignQuestion \"plans/component.md\" (reviewBase (reviewBasis sessionInput)) \"owner decision\" [] [] [])\nreportProgress (WorkProgress [] [question])"
-  awaitCell owner "replacement retains original question source"
-    "do { state <- R.call (reviewSnapshot (R.client flow)) (); pure (any (any ((== \"after-replacement\") . questionKey) . snd) (flowQuestions state)) }"
+    "let question = Question \"reviewer-question\" (DesignQuestion \"plans/component.md\" (reviewBase (reviewBasis sessionInput)) \"owner decision\" [] [] [])\nreportProgress (WorkProgress [] [question])"
+  awaitCell owner "reviewer question reaches the original dynamic source"
+    "do { state <- R.call (reviewSnapshot (R.client flow)) (); pure (any (any ((== \"reviewer-question\") . questionKey) . snd) (flowQuestions state)) }"
   void $ turn (checkActor reviewer)
-    "respond (Produced (Accepted (ReviewedCandidate (reviewBasis sessionInput) (reviewInput sessionInput) [] \"original request after replacement\")))"
+    "respond (Produced (Accepted (ReviewedCandidate (reviewBasis sessionInput) (reviewInput sessionInput) [] \"original request after progress\")))"
   awaitCell owner "review reaches accepted terminal state"
     "do { state <- R.call (reviewSnapshot (R.client flow)) (); pure (case flowStage state of { ReviewAccepted _ -> True; _ -> False }) }"
   void $ turn owner "state <- R.call (reviewSnapshot (R.client flow)) ()"
-  assertCell owner "replacement retains original sources without a second review"
+  assertCell owner "reviewer progress retains original sources without a second review"
     "map requestId (flowReviewerRequests state) == map requestId (flowReviewerRequests before) && length (flowReviewerRequests state) == 1 && length (flowCandidateReceipts state) == 1 && length (flowAttachments state) == 1 && length (flowReviewerReceipts state) == 1 && case flowReviewedProof state of { Just _ -> True; _ -> False }"
   void $ turn owner "R.finish flow"

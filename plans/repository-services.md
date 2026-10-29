@@ -30,16 +30,21 @@ Observed: the actor searched captured document values and retained its query
 and answer in a private record. Results included the relevant README paragraphs
 and some loose matches. `Search.grep` is a semantic shortlist, not exact retrieval.
 
-## 3. Upgrade the running service
+## 3. Finish the old service and start a revised service
 
 ```haskell
 import qualified Project.Repository as Repo
-scout <- R.replace index (Service.serve (Repo.answer docs))
+retiredIndex <- R.finish index
+scout <- R.start (Service.serve (Repo.answer docs))
 R.call (Service.ask (R.client scout))
   "Which commit fixed the State import needed by retained Handler values?"
 ```
 
-The final live run used the fifth replacement handle, `scoutV5`, and returned:
+The revised service starts with fresh state. Endpoints issued by `index` still
+name the finished actor; callers must explicitly use the new service's client.
+Resolve any uncertain external effects before submitting new work.
+
+An earlier live run of the repository-answer helper returned:
 
 ```text
 [history]
@@ -71,12 +76,11 @@ and a child-source isolation question to commit `b03350e34`.
   observation budget of 100000. Patch evidence is now bounded to 4000 characters
   per candidate, explicitly marked when partial, with exact Git SHAs retained
   for deeper reads. The bounded continuation ran successfully inside the actor.
-- A failed actor handler could not be drained until replaced. Replacement
-  recovered it with the previously committed record intact.
-- The final record contained six completed query/answer pairs, spanning policy
-  replacements. The failed handler did not append a record.
+- A failed actor handler retires its actor with retained failure evidence.
+  Starting another service uses its definition's initial state; prior query
+  history is available only through observations retained by the caller.
 - Jev results can vary. The transcript above is one actual run, not canned output.
 
-`scoutV5` remains live for screenshot capture. The two earlier history-only
-actors were finished. Finish the remaining service with `R.finish scoutV5`
-after capture. No repository implementation files were changed by these demos.
+Finish the revised service with `R.finish scout` when done. The historical
+output above demonstrates the helper's behavior; it does not establish execution
+evidence for this finish-and-start sequence.

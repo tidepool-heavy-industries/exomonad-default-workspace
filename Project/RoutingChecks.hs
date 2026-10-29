@@ -96,6 +96,7 @@ observerIsolation = do
   void $ turn owner "refusedExisting <- traverse R.start (workDefinition [(\"same\", R.settlement producer, R.progress updates), (\"same\", R.settlement producer, R.progress updates)] keepWork)\noriginalState <- pollResponse producer"
   assertCell owner "collector refusal leaves original supplied request active" "((case refusedExisting of { Left (DuplicateSourceName \"same\") -> True; _ -> False }) && (case originalState of { ResponsePending _ -> True; _ -> False }))"
   script owner "observer-isolation"
+  assertCell owner "the stale optional endpoint belongs to an explicitly finished actor" "case retiredOptional of { Actor.Completed () -> True; _ -> False }"
   script (checkActor producer) "progress-route-questions"
   void $ turn (checkActor producer) "reportProgress (WorkProgress [] [first])"
   void $ turn owner "optionalExit <- Actor.awaitExit (R.actorRef optional)"
@@ -173,11 +174,12 @@ forwardingFailure = do
   script owner "progress-route-producer"
   producer <- activation
   script owner "forwarding-failure"
+  assertCell owner "the old destination finished with its own state" "case retiredSink of { Actor.Completed count -> count == 0; _ -> False }"
   identity <- turn owner "forwarding"
   check "display UX: a forwarding handle displays identity without inspecting its result cell" ("Forwarding (" `Text.isPrefixOf` output identity)
   void $ turn (checkActor producer) "respond (\"retained result\" :: Text)"
   awaitCell owner "finite forwarding retains a failed exit instead of retargeting a stale endpoint" "do { exit <- R.forwardingExit forwarding; pure (case exit of { Just (Actor.Failed _) -> True; _ -> False }) }"
-  awaitCell owner "replacement does not receive a send addressed to the old incarnation" "do { count <- R.call (acceptedCount (R.client sink)) (); pure (count == 0) }"
+  awaitCell owner "a fresh actor does not receive a send addressed to the finished actor" "do { count <- R.call (acceptedCount (R.client sink)) (); pure (count == 0) }"
   awaitCell owner "the forwarder's failed exit remains inspectable after another query" "do { exit <- R.forwardingExit forwarding; pure (case exit of { Just (Actor.Failed _) -> True; _ -> False }) }"
   void $ turn owner "R.finish sink"
 
@@ -331,19 +333,20 @@ notificationRetention = do
   void $ turn (checkActor producer) "reportProgress (WorkProgress [] [first,first])"
   void $ turn owner "checkObserved <- (length . workNotices <$> readWork collection)"
   assertCell owner "repeated questions do not retry failed notification" "checkObserved == 1"
-  void $ turn owner "Right replacementSpec <- pure (workDefinition [(\"producer\", R.settlement producer, R.progress updates)] (notifyWork (responseActor consumer) (workMessage id)))\ncollection <- R.replace collection replacementSpec"
-  awaitCell owner "replacement preserves failed notification evidence without replay" "(\\view -> (== ((1,[[\"question-a\"]]))) (length (workNotices view), map (map questionKey . workQuestions . sourceProgress) (collectedWork view))) <$> readWork collection"
+  awaitCell owner "ordinary inspection preserves failed notification evidence without replay" "(\\view -> (== ((1,[[\"question-a\"]]))) (length (workNotices view), map (map questionKey . workQuestions . sourceProgress) (collectedWork view))) <$> readWork collection"
   -- Exercise uncertainty as typed sink data. No external send is claimed here.
   script owner "uncertain-route"
   awaitCell owner "uncertain admission preserves the observed question" "do\n  view <- readWork uncertain\n  pure (map (map questionKey . workQuestions . sourceProgress) (collectedWork view) == [[\"question-a\"]] && length [() | Notice _ (Left (NotificationAdmissionUnconfirmed _)) <- workNotices view] == 1)\n"
-  void $ turn owner "Right replacementSpec <- pure (workDefinition [(\"producer\", R.settlement producer, R.progress updates)] keepWork)\nuncertain <- R.replace uncertain replacementSpec"
+  void $ turn (checkActor producer) "reportProgress (WorkProgress [] [first,first])"
+  void $ turn owner "checkObserved <- (length . workNotices <$> readWork uncertain)"
+  assertCell owner "repeated progress never retries an uncertain send" "checkObserved == 1"
+  void $ turn owner "uncertainExit <- R.finish uncertain"
+  assertCell owner "retirement retains uncertain admission evidence" "case uncertainExit of { Actor.Completed state -> length [() | Notice _ (Left (NotificationAdmissionUnconfirmed _)) <- workNotices state] == 1; _ -> False }"
   void $ turn (checkActor producer) "reportProgress (WorkProgress [] [])"
   awaitCell owner "resolving the final question produces its own delta" "(\\view -> (== (([[]],2))) (map (workQuestions . sourceProgress) (collectedWork view), length (workNotices view))) <$> readWork collection"
-  void $ turn owner "checkObserved <- (length . workNotices <$> readWork uncertain)"
-  assertCell owner "replacement never replays an uncertain send" "checkObserved == 1"
   void $ turn (checkActor producer) "respond (\"finished\" :: Text)"
   awaitCell owner "closure is quiet but the final result still arrives" "do\n  view <- readWork collection\n  pure (length (workNotices view) == 3 && case collectedWork view of { [source] -> case sourceResult source of { Just (Right receipt) -> responseValue receipt == \"finished\"; _ -> False }; _ -> False })\n"
-  void $ turn owner "R.finish collection\nR.finish uncertain"
+  void $ turn owner "R.finish collection"
 
 -- Source publications and explicit queries use the same mailbox. A snapshot
 -- call after publication is a barrier; the test never rearms a progress watch.
@@ -358,7 +361,6 @@ independentSources = do
   script (checkActor right) "attention-sources-question"
   void $ turn (checkActor left) "reportProgress (WorkProgress [] [first,second])"
   awaitCell owner "left progresses while right is silent" "(\\view -> (== ([(\"left\",[\"same-key\",\"second\"],WorkOpen),(\"right\",[],WorkOpen)])) [(sourceName s, map questionKey (workQuestions (sourceProgress s)), Exomonad.Contrib.Routing.sourceStatus s) | s <- collectedWork view]) <$> readWork collection"
-  void $ turn owner "Right replacementSpec <- pure (workDefinition [(\"left\", R.settlement left, R.progress leftProgress), (\"right\", R.settlement right, R.progress rightProgress)] countChanges)\ncollection <- R.replace collection replacementSpec"
   void $ turn (checkActor left) "reportProgress (WorkProgress [] [second,first,first])"
   void $ turn owner "readWork collection"
   void $ turn owner "checkObserved <- (Actor.call wakes (RoutingCount 0 id))"

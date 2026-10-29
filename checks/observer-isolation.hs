@@ -2,6 +2,7 @@ data OptionalObserver mode = OptionalObserver { observerPrivate :: mode :- State
 let optionalDefinition = coordinationActor "optional-observer" OptionalObserver { observerPrivate = (), observeOptional = \_ -> error "observer failure" }
 optional <- R.start optionalDefinition
 let staleObservation = observeOptional (R.client optional)
-optional <- R.replace optional optionalDefinition
+retiredOptional <- R.finish optional
+optional <- R.start optionalDefinition
 let optionalSink = Exomonad.Contrib.Routing.observeWork "stale" staleObservation Just (Exomonad.Contrib.Routing.observeWork "failed-handler" (observeOptional (R.client optional)) Just (notifyWork me (workMessage id)))
 Right collection <- traverse R.start (workDefinition [("producer", R.settlement producer, R.progress updates)] optionalSink)

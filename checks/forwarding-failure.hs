@@ -2,5 +2,6 @@ data ResultSink mode = ResultSink { sinkState :: mode :- State Int, acceptResult
 let sinkDefinition = coordinationActor "result-sink" ResultSink { sinkState = 0, acceptResult = \_ -> modify' (+1), acceptedCount = \() -> get }
 sink <- R.start sinkDefinition
 let oldDestination = acceptResult (R.client sink)
-sink <- R.replace sink sinkDefinition
+retiredSink <- R.finish sink
+sink <- R.start sinkDefinition
 forwarding <- R.forwardResult producer oldDestination

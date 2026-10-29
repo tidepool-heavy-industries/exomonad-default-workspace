@@ -71,7 +71,7 @@ checks = [
   "Project.ReviewFlowChecks.effectfulRouting",
   "Project.ReviewFlowChecks.workflowExample",
   "Project.ReviewFlowChecks.lateCandidate",
-  "Project.ReviewFlowChecks.replacement",
+  "Project.ReviewFlowChecks.reviewerProgress",
   "Project.ReviewFlowChecks.sourcePreflight",
   "Project.ReviewFlowChecks.emptyFindings",
   "Project.CheckedReviewChecks.selectionMismatch",

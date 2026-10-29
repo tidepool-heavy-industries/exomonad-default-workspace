@@ -16,7 +16,7 @@ Availability of the names below:
 
 - **Shipped** — in every Exomonad cell: `R.definition`, `R.start`, `R.client`,
   `R.send`, `R.call`, `R.on`, `R.settlement`, `R.progress`, `R.lifecycle`,
-  `Cmd.completion`, `R.self`, `R.sender`, `R.finish`, `R.replace`,
+  `Cmd.completion`, `R.self`, `R.sender`, `R.finish`,
   `R.forwardResult`, `request`, `requestWithProgress`, `Request`, `LocalEffects`, `ActorSpec`,
   `Handler`, `Actor.Selected`, `knownEffects`, `Replies`, `Actor`,
   `Notifications`.
@@ -76,7 +76,7 @@ carries the exact typed terminal result, including failure and execution evidenc
 `Cmd.completion job` carries `Cmd.CommandResult` for a command owned by the
 creator. It retains completion for a late collector. Route the result, including
 its cleanup evidence, rather than waking a model to poll command status.
-Issue `R.progress`, `R.settlement`, `R.start`, `R.replace`, and `R.finish`
+Issue `R.progress`, `R.settlement`, `R.start`, and `R.finish`
 where the event, actor state, and result types are concrete. Generic helpers
 compose already-issued `EventSource` values and return `ActorSpec` definitions;
 the caller validates the configuration before creating relay actors.
@@ -102,11 +102,12 @@ cannot infer the row from the record. Annotate the expression with
 `Handler MyState (CoordinationEffects MyActor) result`; the handlers inside a
 `coordinationActor` definition already receive that context.
 
-Successful handlers commit their state and reply. A failed handler leaves the
-last committed state; external effects are **not** undone. Do not repeat an
-uncertain request or send on replacement. `R.replace handle newDefinition` keeps
-the schema and retained state, and returns the replacement's exact handle.
-Previously distributed endpoints still name their original incarnation.
+Successful handlers commit their state and reply. A failed handler retires its
+actor with a retained failure; external effects are **not** undone and the failed
+input is not replayed. Previously distributed endpoints still name the retired
+actor and refuse further input. Starting another actor creates fresh state from
+its definition. Reconcile uncertain requests and sends before deciding what new
+work to admit.
 
 When a record actor needs work from another agent, use the ordinary typed
 request operation and keep its returned `Request` handle in the actor state or
