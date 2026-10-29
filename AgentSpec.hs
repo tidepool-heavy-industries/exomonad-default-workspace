@@ -6,6 +6,7 @@ module AgentSpec (agentSpec) where
 import Control.Monad.Freer (Member)
 import Tidepool.Agent.Contract
 import qualified Project.Tools as Tools
+import qualified Project.Shell as Shell
 import Tidepool.Effects.Core (BoundWorktree, Commands, Console, Jev, Reflect)
 import Tidepool.Agent.Reply (Replies)
 
@@ -18,4 +19,5 @@ agentSpec ::
   AgentSpec (Tools.WorkspaceTools effects) effects
 agentSpec = defaultSpec
   { specTools = Tools.tools
+  , afterTool = Just Shell.afterTool
   }

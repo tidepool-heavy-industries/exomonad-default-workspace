@@ -5,11 +5,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeOperators #-}
 
--- | Shared command tools whose automatic observations are selected by Jev.
--- Execution, input, cancellation, retained jobs and raw paging stay owned by
--- 'Tidepool.Command'; this module changes only the text prepared for display.
+-- | Native bounded command tools, optional after-tool selection, and explicit
+-- inspection of frozen retained streams. Automatic selection sees only the
+-- bounded display; complete stream reads happen only on explicit inspection.
 module Project.Shell
   ( tools,
+    afterTool,
     OutputSnapshot,
     outputSnapshot,
     outputSnapshotFor,
@@ -30,23 +31,13 @@ import Control.Monad.Freer (Eff, Member)
 import Data.Char (ord)
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Project.Sift as Sift
-import Tidepool.Agent.Contract (AsServerT)
+import qualified Project.ContextSelection as Selection
+import Tidepool.Agent.Contract (AsServerT, ToolCall(..), ToolResult(..), Annotation(..))
+import Tidepool.Aeson.FromJSON (Result(..), fromJSON)
 import qualified Tidepool.Command as Cmd
 import qualified Tidepool.Command.Tools as Command
 import Tidepool.Command.Types (Job (..))
-import Tidepool.Effects.Core
-  ( CommandCleanup (..),
-    CommandError (..),
-    CommandOutcome (..),
-    CommandOutput (..),
-    CommandPage (..),
-    CommandResult (..),
-    CommandStatus (..),
-    Commands,
-    Jev,
-    Reflect,
-  )
+import Tidepool.Effects.Core (Commands, Jev, Reflect)
 
 -- Configuration is ordinary Haskell on purpose: a workspace can tune these
 -- values and reload its spec without changing a runtime protocol.
@@ -79,7 +70,7 @@ newtype SectionId = SectionId Int
 data OutputSnapshotIssue
   = SnapshotExpired Cmd.CommandStream Int
   | SnapshotDecodingLoss Cmd.CommandStream Int
-  | SnapshotUnavailable Cmd.CommandStream CommandError
+  | SnapshotUnavailable Cmd.CommandStream Cmd.CommandError
   | UnknownSection SectionId
   deriving (Eq, Show)
 
@@ -93,10 +84,18 @@ data Section = Section
   }
   deriving (Eq, Show)
 
-tools ::
-  (Member Commands effects, Member Jev effects, Member Reflect effects) =>
-  Command.ShellTools (AsServerT (Eff effects))
-tools = Command.toolsWith presentSelected
+tools :: Member Commands effects => Command.ShellTools (AsServerT (Eff effects))
+tools = Command.tools
+
+-- | An opt-in focus selects from the already bounded native display. The
+-- issued result handle authorizes pruning; frozen stream endpoints remain in
+-- the canonical command facts for explicit inspection without replay.
+afterTool :: (Member Jev effects, Member Reflect effects)
+  => ToolCall -> ToolResult -> Eff effects Annotation
+afterTool call result = case (fromJSON (toolResultValue result), fromJSON (toolCallArguments call)) of
+  (Success Command.ObservedCommand{}, Success Command.Execute{Command.focus = Just focus}) ->
+    Selection.selectRelevantChunks Selection.defaultSelectionConfig focus call result
+  _ -> pure NoAnnotation
 
 -- | Unicode scalar count times 0.25, rounded up.
 estimatedTokens :: Text -> Int
@@ -124,218 +123,7 @@ splitSections tokens = go
     lastSplit [part] = part
     lastSplit (_ : parts) = lastSplit parts
 
-presentSelected ::
-  (Member Commands effects, Member Jev effects, Member Reflect effects) =>
-  Command.ObservationPresenter effects
-presentSelected _command _purpose focus observation retained = do
-  (_, prepared) <- Cmd.observeWith observation retained (prepare focus)
-  pure prepared
-
--- | Without a focus, output that fits 'Cmd.presentedByteBudget' is shown
--- whole -- no Jev call, no line-count gate. Output that does not fit is
--- truncated to a head and tail with an omitted-byte-range marker per
--- stream. With a focus, 'Project.Sift.sift' scores and selects sections
--- relevant to it, bounded by the same byte budget; text that already fits
--- is still shown whole, without scoring.
-prepare ::
-  (Member Commands effects, Member Jev effects, Member Reflect effects) =>
-  Maybe Text ->
-  Cmd.PresentedObservation ->
-  Eff effects Command.CommandToolResult
-prepare focus observed = case Cmd.presentedOutput observed of
-  Left issue ->
-    pure
-      ( Command.observedResult (Cmd.presentedJob observed) (Cmd.presentedStatus observed)
-          Nothing Nothing 0 False $ budgetEnvelope
-          (Cmd.presentedByteBudget observed)
-          (statusHeading observed <> "\n")
-          ("Output unavailable: " <> Cmd.renderCommandError issue)
-          (recovery observed)
-      )
-  Right output -> do
-    let frozen =
-          OutputSnapshot
-            (Cmd.presentedJob observed)
-            (Cmd.outputAvailableEnd (Cmd.commandStdout output))
-            (Cmd.outputAvailableEnd (Cmd.commandStderr output))
-        reply = Command.observedResult (Cmd.presentedJob observed) (Cmd.presentedStatus observed)
-          (Just (stdoutEndpoint frozen)) (Just (stderrEndpoint frozen))
-        streamsComplete = Cmd.outputFinished (Cmd.commandStdout output)
-          && Cmd.outputFinished (Cmd.commandStderr output)
-          && Cmd.outputRetainedStart (Cmd.commandStdout output) == 0
-          && Cmd.outputRetainedStart (Cmd.commandStderr output) == 0
-    loaded <- loadStreams frozen (Just output)
-    case loaded of
-      Left issue ->
-        pure
-          ( reply 0 False $ budgetEnvelope
-              (Cmd.presentedByteBudget observed)
-              (statusHeading observed <> "\n")
-              (renderIssue issue)
-              (recoveryFor frozen)
-          )
-      Right (stdoutText, stderrText) -> do
-        let heading = statusHeading observed
-            budget = Cmd.presentedByteBudget observed
-            prefix = heading <> "\n"
-            completePrefix = fittedPrefix budget "" prefix
-            prefixWasClipped = utf8Bytes completePrefix < utf8Bytes prefix
-            plain = stdoutText <> stderrText
-            -- Semantic payload size belongs to the frozen streams, not the
-            -- rendered status, recovery pointer or selection markers.
-            payloadLines = length (T.lines stdoutText) + length (T.lines stderrText)
-        case focus of
-          Nothing ->
-            if not prefixWasClipped && utf8Bytes (completePrefix <> plain) <= budget
-              then pure (reply payloadLines streamsComplete (completePrefix <> plain))
-              else
-                let ending = "\n" <> recoveryFor frozen
-                    packedPrefix = fittedPrefix budget ending prefix
-                    bodyBudget = max 0 (budget - utf8Bytes packedPrefix - utf8Bytes ending)
-                 in pure
-                      (reply payloadLines False
-                        (budgetEnvelope budget packedPrefix (plainOverBudget bodyBudget stdoutText stderrText) (recoveryFor frozen)))
-          Just focusText -> do
-            let labeled = labelStream Cmd.Stdout stdoutText <> labelStream Cmd.Stderr stderrText
-            if not prefixWasClipped && utf8Bytes (completePrefix <> plain) <= budget
-              then pure (reply payloadLines streamsComplete (completePrefix <> plain))
-              else do
-                let ending = "\n" <> recoveryFor frozen
-                    packedPrefix = fittedPrefix budget ending prefix
-                    bodyBudget = max 0 (budget - utf8Bytes packedPrefix - utf8Bytes ending)
-                selected <- Sift.sift focusText bodyBudget labeled
-                pure (reply payloadLines False
-                  (budgetEnvelope budget packedPrefix selected (recoveryFor frozen)))
-
--- | Two independent streams: no section splitting, no scoring -- the
--- head/tail truncation that runs whenever there is no focus to ask Jev
--- about.
-loadStreams :: Member Commands effects => OutputSnapshot -> Maybe CommandOutput -> Eff effects (Either OutputSnapshotIssue (Text, Text))
-loadStreams frozen initial = do
-  out <- readFrozen frozen Cmd.Stdout (stdoutEndpoint frozen) (Cmd.commandStdout <$> initial)
-  err <- readFrozen frozen Cmd.Stderr (stderrEndpoint frozen) (Cmd.commandStderr <$> initial)
-  pure ((,) <$> out <*> err)
-
-labelStream :: Cmd.CommandStream -> Text -> Text
-labelStream _ text | T.null text = ""
-labelStream stream text = streamName stream <> ":\n" <> text <> "\n"
-
--- | A head of about three quarters of the given stream's budget share and a
--- tail of the rest, with a marker naming the omitted byte range -- only for
--- a stream that was actually cut. Budget is split between stdout and
--- stderr proportionally to their sizes.
-plainOverBudget :: Int -> Text -> Text -> Text
-plainOverBudget budget stdoutText stderrText =
-  let stdoutBytes = utf8Bytes stdoutText
-      stderrBytes = utf8Bytes stderrText
-      total = max 1 (stdoutBytes + stderrBytes)
-      markerRoom label bytes =
-        let width = T.length (number bytes)
-            placeholder = T.replicate width "9"
-         in utf8Bytes
-              ( "omitted " <> label <> " bytes " <> placeholder <> ".." <> placeholder
-                  <> " of " <> placeholder <> "\n"
-              )
-      reserved =
-        (if stdoutBytes > 0 then markerRoom "stdout" stdoutBytes else 0)
-          + (if stderrBytes > 0 then markerRoom "stderr" stderrBytes else 0)
-      excerptBudget = max 0 (budget - reserved)
-      share bytes = (excerptBudget * bytes) `div` total
-      (stdoutShown, stdoutMarker) = truncateStream "stdout" stdoutText (share stdoutBytes)
-      (stderrShown, stderrMarker) = truncateStream "stderr" stderrText (share stderrBytes)
-      markers = T.concat [marker <> "\n" | Just marker <- [stdoutMarker, stderrMarker]]
-   in stdoutShown <> stderrShown <> markers
-
-budgetEnvelope :: Int -> Text -> Text -> Text -> Text
-budgetEnvelope budget prefix body suffix =
-  let ending = if T.null suffix then "" else "\n" <> suffix
-      packedPrefix = fittedPrefix budget ending prefix
-      bodyBudget = max 0 (budget - utf8Bytes packedPrefix - utf8Bytes ending)
-      fittedBody = fitComponent bodyBudget body
-   in packedPrefix <> fittedBody <> ending
-
-fittedPrefix :: Int -> Text -> Text -> Text
-fittedPrefix budget ending = fitComponent (min statusByteLimit (max 0 (budget - utf8Bytes ending)))
-
--- Long failure detail is useful up to a point; keep room in the envelope for
--- stream evidence and its recovery pointer after preserving status labels.
-statusByteLimit :: Int
-statusByteLimit = 512
-
--- Preserve the session and terminal labels at the beginning of the prefix;
--- append a visible marker if diagnostic text or output must be shortened.
-fitComponent :: Int -> Text -> Text
-fitComponent budget text
-  | utf8Bytes text <= budget = text
-  | budget >= 3 = takeUtf8 (budget - 3) text <> "…"
-  | otherwise = takeUtf8 budget text
-
-truncateStream :: Text -> Text -> Int -> (Text, Maybe Text)
-truncateStream label text budget
-  | bytes <= max 0 budget = (text, Nothing)
-  | otherwise =
-      let headBudget = (max 0 budget * 3) `div` 4
-          tailBudget = max 0 (budget - headBudget)
-          headText = takeUtf8 headBudget text
-          tailText = takeUtf8End tailBudget text
-          omittedStart = utf8Bytes headText
-          omittedEnd = max omittedStart (bytes - utf8Bytes tailText)
-          marker = "omitted " <> label <> " bytes " <> number omittedStart <> ".." <> number omittedEnd <> " of " <> number bytes
-       in (headText <> tailText, Just marker)
-  where
-    bytes = utf8Bytes text
-
-statusHeading :: Cmd.PresentedObservation -> Text
-statusHeading observed =
-  "session_id: " <> jobText (Cmd.presentedJob observed) <> "\n" <> case Cmd.presentedStatus observed of
-    CommandQueued -> "terminal: no · queued (process not started)"
-    CommandStarting -> "terminal: no · starting"
-    CommandRunning -> "terminal: no · running"
-    CommandStopping -> "terminal: no · stopping; cancellation not yet confirmed"
-    CommandFinished result ->
-      "terminal: yes · " <> outcomeText (commandOutcome result) <> " · cleanup: " <> cleanupText (commandCleanup result)
-  where
-    cleanupText CommandClean = "clean"
-    cleanupText CommandRetained = "retained"
-    cleanupText (CommandCleanupUnknown detail) = "unknown · " <> boundedStatusDetail detail
-
--- Failure and cleanup details are diagnostic text supplied by the command
--- backend. Bound them independently so one long reason cannot displace the
--- terminal and cleanup labels or the recovery instructions in the envelope.
-boundedStatusDetail :: Text -> Text
-boundedStatusDetail = fitComponent statusDetailByteLimit
-
-statusDetailByteLimit :: Int
-statusDetailByteLimit = 96
-
--- | Model-facing rendering of a command outcome, matching
--- 'Tidepool.Command.outcomeText': an out-of-memory kill and a raw signal are
--- named directly rather than shown as an opaque exit code.
-outcomeText :: CommandOutcome -> Text
-outcomeText (CommandOutOfMemory limit) =
-  "out of memory · memory_mib=" <> T.pack (show limit) <> " exceeded · rerun with a larger memory_mib"
-outcomeText (CommandSignalled signal) =
-  "killed by signal " <> T.pack (show signal)
-outcomeText CommandCancelled = "cancelled"
-outcomeText (CommandFailed detail) = "CommandFailed · " <> boundedStatusDetail detail
-outcomeText (CommandUnconfirmed detail) = "CommandUnconfirmed · " <> boundedStatusDetail detail
-outcomeText other = T.pack (show other)
-
-jobText :: Cmd.Job -> Text
-jobText (Job key) = key
-
-snapshotFromObservation :: Cmd.PresentedObservation -> Maybe OutputSnapshot
-snapshotFromObservation observed = case Cmd.presentedOutput observed of
-  Left _ -> Nothing
-  Right output ->
-    Just
-      ( OutputSnapshot
-          (Cmd.presentedJob observed)
-          (Cmd.outputAvailableEnd (Cmd.commandStdout output))
-          (Cmd.outputAvailableEnd (Cmd.commandStderr output))
-      )
-
-loadSections :: Member Commands effects => OutputSnapshot -> Maybe CommandOutput -> Eff effects (Either OutputSnapshotIssue [Section])
+loadSections :: Member Commands effects => OutputSnapshot -> Maybe Cmd.CommandOutput -> Eff effects (Either OutputSnapshotIssue [Section])
 loadSections frozen initial = do
   out <- readFrozen frozen Cmd.Stdout (stdoutEndpoint frozen) (Cmd.commandStdout <$> initial)
   err <- readFrozen frozen Cmd.Stderr (stderrEndpoint frozen) (Cmd.commandStderr <$> initial)
@@ -381,7 +169,7 @@ assignSections streams = snd (foldl addStream (1, []) streams)
        in (offset + bytes, parts <> [(offset, offset + bytes, part)])
     number stream ident (start, end, text) = Section (SectionId ident) stream start end text True
 
-readFrozen :: Member Commands effects => OutputSnapshot -> Cmd.CommandStream -> Int -> Maybe CommandPage -> Eff effects (Either OutputSnapshotIssue Text)
+readFrozen :: Member Commands effects => OutputSnapshot -> Cmd.CommandStream -> Int -> Maybe Cmd.CommandPage -> Eff effects (Either OutputSnapshotIssue Text)
 readFrozen frozen stream endpoint initial = case initial of
   Nothing -> collect 0 []
   Just page
@@ -407,34 +195,6 @@ readFrozen frozen stream endpoint initial = case initial of
                           if Cmd.outputEnd details <= cursor
                             then pure (Left (SnapshotExpired stream cursor))
                             else collect (min endpoint (Cmd.outputEnd details)) (Cmd.outputText details : chunks)
-
-recovery :: Cmd.PresentedObservation -> Text
-recovery observed = maybe "" recoveryFor (snapshotFromObservation observed)
-
-recoveryFor :: OutputSnapshot -> Text
-recoveryFor frozen =
-  let Job jobKey = snapshotJob frozen
-   in "Recover without rerunning: let snap = Project.Shell.outputSnapshotFor "
-    <> T.pack (show jobKey)
-    <> " "
-    <> number (stdoutEndpoint frozen)
-    <> " "
-    <> number (stderrEndpoint frozen)
-    <> "."
-
-sectionKey :: SectionId -> Text
-sectionKey (SectionId value) = "s" <> number value
-
-streamName :: Cmd.CommandStream -> Text
-streamName Cmd.Stdout = "stdout"
-streamName Cmd.Stderr = "stderr"
-
-renderIssue :: OutputSnapshotIssue -> Text
-renderIssue issue = case issue of
-  SnapshotExpired stream offset -> streamName stream <> " retained output expired or has a gap at byte " <> number offset <> "."
-  SnapshotDecodingLoss stream offset -> streamName stream <> " has decoding loss at byte " <> number offset <> "."
-  SnapshotUnavailable stream failure -> streamName stream <> " unavailable: " <> Cmd.renderCommandError failure
-  UnknownSection ident -> "No section " <> sectionKey ident <> " belongs to this snapshot."
 
 section :: Member Commands effects => OutputSnapshot -> SectionId -> Eff effects (Either OutputSnapshotIssue Text)
 section frozen ident = do
@@ -466,26 +226,6 @@ findSection ident = go
       | sectionId candidate == ident = Just candidate
       | otherwise = go rest
 
-takeUtf8 :: Int -> Text -> Text
-takeUtf8 budget = T.pack . go budget . T.unpack
-  where
-    go _ [] = []
-    go remaining (character : rest)
-      | width character <= remaining = character : go (remaining - width character) rest
-      | otherwise = []
-
--- | Like 'takeUtf8' but keeps a scalar-safe suffix instead of a prefix.
-takeUtf8End :: Int -> Text -> Text
-takeUtf8End budget text = T.takeEnd (go budget (T.unpack (T.reverse text))) text
-  where
-    go _ [] = 0
-    go remaining (character : rest)
-      | width character <= remaining = 1 + go (remaining - width character) rest
-      | otherwise = 0
-
-utf8Bytes :: Text -> Int
-utf8Bytes = sum . map width . T.unpack
-
 width :: Char -> Int
 width character
   | ord character < 0x80 = 1
@@ -493,5 +233,5 @@ width character
   | ord character < 0x10000 = 3
   | otherwise = 4
 
-number :: Int -> Text
-number = T.pack . show
+utf8Bytes :: Text -> Int
+utf8Bytes = T.foldl' (\n character -> n + width character) 0
