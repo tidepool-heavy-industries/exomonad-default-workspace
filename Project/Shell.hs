@@ -31,6 +31,7 @@ import Data.Char (ord)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Project.ContextSelection as Selection
+import Tidepool.Agent.Watch (Watches)
 import Tidepool.Agent.Contract (AsServerT, ToolCall(..), ToolResult(..), Annotation(..))
 import Tidepool.Aeson.FromJSON (Result(..), fromJSON)
 import qualified Tidepool.Command as Cmd
@@ -81,7 +82,7 @@ data Section = Section
   }
   deriving (Eq, Show)
 
-tools :: Member Commands effects => Command.ShellTools (AsServerT (Eff effects))
+tools :: (Member Commands effects, Member Watches effects) => Command.ShellTools (AsServerT (Eff effects))
 tools = Command.tools
 
 -- | An opt-in focus selects from the already bounded native display. The

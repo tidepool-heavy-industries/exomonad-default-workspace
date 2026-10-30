@@ -17,43 +17,96 @@ import Project.BrowserScenario
 import Project.TestEvidence
 import qualified Tidepool.Command as Cmd
 import Tidepool.Command.Types (Job (..))
-import Tidepool.Effects.Core (Commands (..), CommandObservation (..))
+import Tidepool.Effects.Core (Commands (..))
+import Tidepool.Agent.Reply.Internal (ReplyError (..))
+import Tidepool.Agent.Watch.Internal
+  ( Watches (..), AwaitPlan (..), AwaitNode (..), AwaitDependency (..)
+  , AwaitDecision (..), RawWatchObservation (..), ForgetWatchOutcome (..) )
 
 data Step
   = Start Cmd.CommandSpec (Either Cmd.CommandError Text)
   | Background Cmd.CommandSpec Text
-  | Wait Text (Either Cmd.CommandError CommandObservation)
+  | Wait Text (Either ReplyError TerminalFixture)
 
 data ProtocolFailure = ProtocolFailure String deriving (Show)
 instance Exception ProtocolFailure
 
-execute :: [Step] -> Eff '[Commands, IO] value -> IO value
+-- The fixture records terminal evidence and an independent bounded output read.
+type TerminalFixture = (Cmd.CommandResult, Either Cmd.CommandError Cmd.CommandOutput)
+
+data CompletionPhase = Waiting | Ready | Projected | Released deriving (Eq)
+
+execute :: [Step] -> Eff '[Commands, Watches, IO] value -> IO value
 execute expected action = do
   remaining <- newIORef expected
   executeScript remaining action
 
-executeScript :: IORef [Step] -> Eff '[Commands, IO] value -> IO value
+executeScript :: IORef [Step] -> Eff '[Commands, Watches, IO] value -> IO value
 executeScript remaining action = do
-  let handler :: Commands value -> IO value
-      handler request = do
-        steps <- readIORef remaining
-        case (steps, request) of
-          (Start wanted answer : rest, CommandStartWith actual) -> do
-            assert "exact invocation-owned command" (actual == wanted)
-            writeIORef remaining rest
-            pure answer
-          (Background wanted key : rest, CommandBackgroundWith actual) -> do
-            assert "existing actor-owned helper shares command builder" (actual == wanted)
-            writeIORef remaining rest
-            pure (Right key)
-          (Wait wanted answer : rest, CommandWaitWith actual) -> do
-            assert "wait exact retained job" (actual == wanted)
-            writeIORef remaining rest
-            pure answer
-          _ -> throwIO (ProtocolFailure "unexpected command effect or command ordering")
-  result <- runM (interpretM handler action)
+  pending <- newIORef (Nothing :: Maybe (Text, TerminalFixture, CompletionPhase))
+  let commandHandler :: Commands value -> IO value
+      commandHandler request = case request of
+        CommandOutputWith actual budget -> do
+          retained <- readIORef pending
+          case retained of
+            Just (wanted, terminal, Released) -> do
+              assert "bounded output follows shared readiness and release" (actual == wanted && budget == 1024 * 1024)
+              writeIORef pending Nothing
+              pure (snd terminal)
+            _ -> throwIO (ProtocolFailure "output requested without an awaited completion")
+        _ -> do
+          steps <- readIORef remaining
+          case (steps, request) of
+            (Start wanted answer : rest, CommandStartWith actual) -> do
+              assert "exact invocation-owned command" (actual == wanted)
+              writeIORef remaining rest
+              pure answer
+            (Background wanted key : rest, CommandBackgroundWith actual) -> do
+              assert "existing actor-owned helper shares command builder" (actual == wanted)
+              writeIORef remaining rest
+              pure (Right key)
+            _ -> throwIO (ProtocolFailure "unexpected command effect or command ordering")
+      watchHandler :: Watches value -> IO value
+      watchHandler request = case request of
+        RegisterAwaitWith (AwaitPlan [LeafNode (AwaitCommand actual)] 0) -> do
+          prior <- readIORef pending
+          assert "previous completion and output were consumed" (case prior of Nothing -> True; _ -> False)
+          steps <- readIORef remaining
+          case steps of
+            Wait wanted answer : rest -> do
+              assert "await exact retained job" (actual == wanted)
+              writeIORef remaining rest
+              case answer of
+                Left issue -> pure (Left issue)
+                Right terminal -> writeIORef pending (Just (wanted, terminal, Waiting)) >> pure (Right 1)
+            _ -> throwIO (ProtocolFailure "unscripted shared await")
+        AwaitWatchWith 1 -> do
+          retained <- readIORef pending
+          case retained of
+            Just (key, terminal, Waiting) -> do
+              writeIORef pending (Just (key, terminal, Ready))
+              pure (RawWatchReady (AwaitDecision [(0, Nothing)] []))
+            _ -> throwIO (ProtocolFailure "await without registered command")
+        ObserveWatchCommandWith 1 [] actual -> do
+          retained <- readIORef pending
+          case retained of
+            Just (wanted, terminal, Ready) -> do
+              assert "project exact retained command" (actual == wanted)
+              writeIORef pending (Just (wanted, terminal, Projected))
+              pure (Just (Cmd.CommandCompletion wanted [] Nothing (fst terminal)))
+            _ -> throwIO (ProtocolFailure "projection before readiness")
+        ForgetWatchWith 1 -> do
+          retained <- readIORef pending
+          case retained of
+            Just (key, terminal, Projected) -> do
+              writeIORef pending (Just (key, terminal, Released))
+              pure WatchForgotten
+            _ -> throwIO (ProtocolFailure "subscription released before projection")
+        _ -> throwIO (ProtocolFailure "unexpected shared watch operation")
+  result <- runM (interpretM watchHandler (interpretM commandHandler action))
   steps <- readIORef remaining
-  assert "all scripted effects occurred" (null steps)
+  retained <- readIORef pending
+  assert "all scripted effects occurred" (null steps && case retained of Nothing -> True; _ -> False)
   pure result
 
 assert :: String -> Bool -> IO ()
@@ -75,14 +128,14 @@ page :: Text -> Cmd.CommandPage
 page text = Cmd.CommandPage text 0 size size 0 0 True False False False
   where size = Text.length text
 
-observation :: Cmd.CommandOutcome -> Cmd.CommandCleanup -> Either Cmd.CommandError Cmd.CommandOutput -> CommandObservation
-observation outcome cleanup output = CommandObservation (Cmd.CommandResult outcome cleanup) output
+observation :: Cmd.CommandOutcome -> Cmd.CommandCleanup -> Either Cmd.CommandError Cmd.CommandOutput -> TerminalFixture
+observation outcome cleanup output = (Cmd.CommandResult outcome cleanup, output)
 
-successful :: CommandObservation
+successful :: TerminalFixture
 successful = observation (Cmd.CommandExited 0) Cmd.CommandClean (Right (Cmd.CommandOutput (page "") (page "")))
 
-receipt :: Text -> CommandObservation -> Cmd.RunResult
-receipt key observed = Cmd.Finished (Job key) (observedCommandResult observed) (observedCommandOutput observed)
+receipt :: Text -> TerminalFixture -> Cmd.RunResult
+receipt key observed = Cmd.Finished (Job key) (fst observed) (snd observed)
 
 prerequisites :: [Step]
 prerequisites = [Start prepareSpec (Right "preparation"), Wait "preparation" (Right successful),
@@ -112,7 +165,7 @@ focusedSpecFor scenario = do
       pure command
     Nothing -> throwIO (ProtocolFailure "focused command not captured")
 
-focusedObservation :: BrowserScenario -> CommandObservation
+focusedObservation :: BrowserScenario -> TerminalFixture
 focusedObservation scenario = observation (Cmd.CommandExited 0) Cmd.CommandClean $ Right $
   Cmd.CommandOutput (page "") (page evidence)
   where
@@ -161,11 +214,11 @@ main = do
   refused <- execute [Start prepareSpec (Left Cmd.CommandUnauthorized)] $ runBrowserScenarios workspace resources [BrowserJourney]
   assert "preparation refusal stops downstream" $ case refused of Left (BrowserPreparationRejected Cmd.CommandUnauthorized) -> True; _ -> False
   let failures =
-        [ observation (Cmd.CommandExited 9) Cmd.CommandClean (observedCommandOutput successful)
+        [ observation (Cmd.CommandExited 9) Cmd.CommandClean (snd successful)
         , observation Cmd.CommandCancelled Cmd.CommandClean (Left Cmd.CommandOutputPending)
         , observation (Cmd.CommandUnconfirmed "exit unknown") Cmd.CommandClean (Left Cmd.CommandOutputPending)
-        , observation (Cmd.CommandExited 0) Cmd.CommandRetained (observedCommandOutput successful)
-        , observation (Cmd.CommandExited 0) (Cmd.CommandCleanupUnknown "retained") (observedCommandOutput successful)
+        , observation (Cmd.CommandExited 0) Cmd.CommandRetained (snd successful)
+        , observation (Cmd.CommandExited 0) (Cmd.CommandCleanupUnknown "retained") (snd successful)
         ]
   forM_ failures $ \failed -> do
     result <- execute [Start prepareSpec (Right "preparation"), Wait "preparation" (Right failed)] $
@@ -211,7 +264,7 @@ main = do
         matches False StandaloneReopen "standalone" first && matches False BrowserJourney "journey" second
       _ -> False
     _ -> False
-  forM_ [observation (Cmd.CommandExited 9) Cmd.CommandClean (observedCommandOutput successful),
+  forM_ [observation (Cmd.CommandExited 9) Cmd.CommandClean (snd successful),
     observation Cmd.CommandCancelled Cmd.CommandRetained (Left Cmd.CommandOutputPending)] $ \failed -> do
       terminal <- execute (prerequisites ++ [Start journeyCommand (Right "journey"),
         Start standaloneCommand (Right "standalone"), Wait "journey" (Right failed),
@@ -237,14 +290,14 @@ main = do
           && case focusedEvidence result of Left _ -> True; _ -> False
         _ -> False
     _ -> False
-  refusalScript <- newIORef [Start prepareSpec (Right "preparation"), Wait "preparation" (Left Cmd.CommandUnauthorized)]
+  refusalScript <- newIORef [Start prepareSpec (Right "preparation"), Wait "preparation" (Left ReplyUnauthorized)]
   awaitRefused <- try (executeScript refusalScript $ runBrowserScenarios workspace resources [BrowserJourney])
     :: IO (Either ErrorCall (Either BrowserRunIssue BrowserResult))
   remainingRefusalSteps <- readIORef refusalScript
   assert "await service refusal fails continuation after the exact scripted start and refusal" $
     null remainingRefusalSteps && case awaitRefused of Left _ -> True; _ -> False
   protocolRejected <- try (try (execute [Start prepareSpec (Right "preparation"),
-    Wait "wrong-job" (Left Cmd.CommandUnauthorized)] $ runBrowserScenarios workspace resources [BrowserJourney])
+    Wait "wrong-job" (Left ReplyUnauthorized)] $ runBrowserScenarios workspace resources [BrowserJourney])
       :: IO (Either ErrorCall (Either BrowserRunIssue BrowserResult)))
     :: IO (Either ProtocolFailure (Either ErrorCall (Either BrowserRunIssue BrowserResult)))
   assert "wrong-job protocol failure cannot masquerade as expected await refusal" $

@@ -30,7 +30,7 @@ data PreparedCheckIssue issue
 -- runs with that handler's authority; a path alone grants no checkout access.
 -- Starting the check returns its original handle for CheckResults.watchChecks.
 prepareFocused
-  :: Member Commands effects
+  :: (Member Commands effects, Member Watches effects)
   => Cmd.Memory
   -> Cmd.Job
   -> Cmd.CommandResult
@@ -45,7 +45,7 @@ prepareFocused memory preparation receipt readiness = do
 -- | Compose a pending prerequisite and its focused check in one continuation.
 -- The runtime keeps the original preparation alive until its terminal receipt.
 awaitFocused
-  :: Member Commands effects
+  :: (Member Commands effects, Member Watches effects)
   => Cmd.Memory
   -> Cmd.Job
   -> (Cmd.RunResult -> Eff effects (Either issue FocusedSpec))

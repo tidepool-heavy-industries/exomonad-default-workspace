@@ -7,6 +7,7 @@ module Exomonad.Contrib.PrepareContinue
   ) where
 
 import Control.Monad.Freer (Eff, Member)
+import Tidepool.Agent.Watch (Watches)
 import qualified Tidepool.Command as Cmd
 import Tidepool.Effects.Core (Commands)
 
@@ -17,7 +18,7 @@ data PreparationFailure issue
   deriving (Show)
 
 awaitPrepared
-  :: Member Commands effects
+  :: (Member Commands effects, Member Watches effects)
   => Cmd.Job -> (Cmd.RunResult -> Eff effects (Either issue value))
   -> Eff effects (Either (PreparationFailure issue) value)
 awaitPrepared job readiness = do
@@ -27,7 +28,7 @@ awaitPrepared job readiness = do
 -- | For an existing completion-source consumer, verify that its event and
 -- retained job refer to the same terminal receipt before establishing readiness.
 verifyPrepared
-  :: Member Commands effects
+  :: (Member Commands effects, Member Watches effects)
   => Cmd.Job -> Cmd.CommandResult
   -> (Cmd.RunResult -> Eff effects (Either issue value))
   -> Eff effects (Either (PreparationFailure issue) value)

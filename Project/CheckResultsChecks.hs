@@ -233,7 +233,7 @@ data EvidenceProbe mode = EvidenceProbe
   , probeMove :: mode :- Call (Text, Text) (R.Reply (Either Cmd.CommandError Cmd.CommandResult))
   } deriving Generic
 
-type EvidenceProbeEffects = LocalEffects EvidenceProbe '[Replies, Commands]
+type EvidenceProbeEffects = LocalEffects EvidenceProbe '[Replies, Watches, Commands]
 
 evidenceProbe :: FocusedSpec -> ActorSpec EvidenceProbe EvidenceProbeEffects
 evidenceProbe spec =

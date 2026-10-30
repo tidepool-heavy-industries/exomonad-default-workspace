@@ -16,6 +16,7 @@ import Control.Monad.Freer (Eff, Member)
 import Data.List (nub, sort)
 import Data.Text (Text)
 import qualified Data.Text as Text
+import Tidepool.Agent.Watch (Watches)
 import qualified Tidepool.Command as Cmd
 import Tidepool.Aeson (FromJSON (..), (.:), (.:?), withObject)
 import Tidepool.Effects.Core (Commands)
@@ -268,7 +269,7 @@ focusedResultSummary run result =
 -- The originating command reads its own artifact before exit. A completion
 -- actor may observe the job without being able to open the originating
 -- actor's checkout. The terminal output must be complete to prove the JSON.
-collectFocused :: Member Commands effects => FocusedRun -> Eff effects FocusedResult
+collectFocused :: (Member Commands effects, Member Watches effects) => FocusedRun -> Eff effects FocusedResult
 collectFocused run = do
   let spec = runSpec run
       job = runJob run

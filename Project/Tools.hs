@@ -6,6 +6,7 @@ module Project.Tools (WorkspaceTools (..), tools) where
 
 import Control.Monad.Freer (Eff, Member)
 import GHC.Generics (Generic)
+import Tidepool.Agent.Watch (Watches)
 import Tidepool.Agent.Contract
   ( AsServerT, HaskellTools, haskellTools, KnownToolEffects, ConcurrentEffects
   , type (:-), Sync, Call, ReloadInput, ReloadError, ReloadOutcome, standardReload )
@@ -25,7 +26,7 @@ data WorkspaceTools effects mode = WorkspaceTools
 
 tools ::
   ( KnownToolEffects effects, ConcurrentEffects effects
-  , Member Commands effects, Member Console effects, Member Jev effects, Member Reflect effects
+  , Member Commands effects, Member Watches effects, Member Console effects, Member Jev effects, Member Reflect effects
   , Member Replies effects, Member BoundWorktree effects
   ) =>
   WorkspaceTools effects (AsServerT (Eff effects))

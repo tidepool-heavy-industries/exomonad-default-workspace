@@ -329,7 +329,7 @@ buildReviewFlow
      , Member Replies effects, Member Actor effects, Member Notifications effects
      , Member AgentLaunch effects, Member AgentControl effects
   , Member BoundWorktree effects, Member WorktreeIntegration effects
-     , Member Commands effects, Member Jev effects
+     , Member Commands effects, Member Watches effects, Member Jev effects
      , Member (ActorLocal (R.Message ReviewFlow)) effects)
   => Actor.EffectProfile (R.Message ReviewFlow) effects
   -> (Candidate -> WorktreeEvidence -> Eff effects (Either CheckSourceRefusal ()))
@@ -750,7 +750,7 @@ buildReviewFlow profile prepareSource owner task policy implementer checkPlan ch
 -- and cleanliness together; tryMerge retains mutation authority. Observations
 -- are fresh samples, not seals, so preparation observes the target again.
 prepareCheckSource
-  :: (Member BoundWorktree effects, Member WorktreeIntegration effects, Member Commands effects)
+  :: (Member BoundWorktree effects, Member WorktreeIntegration effects, Member Commands effects, Member Watches effects)
   => Candidate -> WorktreeEvidence -> Eff effects (Either CheckSourceRefusal ())
 prepareCheckSource exact source = do
   bound <- boundWorktree

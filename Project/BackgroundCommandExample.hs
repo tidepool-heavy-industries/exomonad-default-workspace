@@ -10,6 +10,7 @@ module Project.BackgroundCommandExample
   ) where
 
 import Control.Monad.Freer (Eff, Member)
+import Tidepool.Agent.Watch (Watches)
 import qualified Tidepool.Command as Cmd
 import Tidepool.Effects.Core (Commands)
 
@@ -35,7 +36,7 @@ data CompletionProjection = CompletionProjection
 
 -- | Suspend this tool continuation on the original job, then read its
 -- retained output. The command owner retains evidence independently of cells.
-awaitCommandEvidence :: Member Commands effects => Cmd.Job -> Eff effects CompletionEvidence
+awaitCommandEvidence :: (Member Commands effects, Member Watches effects) => Cmd.Job -> Eff effects CompletionEvidence
 awaitCommandEvidence job = do
   result <- Cmd.quiet (Cmd.await job)
   capture <- Cmd.readCommand job

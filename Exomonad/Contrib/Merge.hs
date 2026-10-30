@@ -130,7 +130,7 @@ instance Show MergeState where
     ) : map show (mergeHistory state)
 
 type MergeEffects = R.LocalEffects Merge
-  '[Replies, BoundWorktree, WorktreeIntegration, Commands, Actor]
+  '[Replies, Watches, BoundWorktree, WorktreeIntegration, Commands, Actor]
 
 -- | Bind the integration checkout and run the supplied argv after each merge.
 -- Only a clean exit 0 can advance the optional publication branch.

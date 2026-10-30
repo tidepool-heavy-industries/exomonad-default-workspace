@@ -23,14 +23,18 @@ import Project.SlowCommandWatch (SlowHandler, SlowObservation (..))
 import Exomonad.Contrib.Types (Incorporation)
 import Tidepool.Actors.Exomonad (Actor, AgentRef, GitOid, Request)
 import qualified Tidepool.Command as Cmd
-import Tidepool.Effects.Core (Commands (..), Jev, CommandObservation (..))
+import Tidepool.Effects.Core (Commands (..), Jev)
+import Tidepool.Agent.Reply.Internal (ReplyError (..))
+import Tidepool.Agent.Watch.Internal
+  ( Watches (..), AwaitPlan (..), AwaitNode (..), AwaitDependency (..)
+  , AwaitDecision (..), RawWatchObservation (..), ForgetWatchOutcome (..) )
 import Tidepool.Command.Types (Job (..))
 
 -- A parent can retain the pending child's baseline while running two exact,
 -- read-only command probes in its own checkout. The returned batch retains
 -- terminal observations and the probes not admitted to this batch.
 pendingChildExample
-  :: (Member Actor effects, Member Commands effects)
+  :: (Member Actor effects, Member Commands effects, Member Watches effects)
   => AgentRef -> GitOid -> Request Incorporation -> Text
   -> Eff effects (Either ProbeRefusal ProbeBatch)
 pendingChildExample owner baseline incorporation checkout = do
@@ -46,7 +50,7 @@ pendingChildExample owner baseline incorporation checkout = do
 -- Semantic selection carries the caller's typed command and budget directly
 -- into execution; there is no second name lookup or synthesized command.
 chosenProbeExample
-  :: (Member Jev effects, Member Commands effects)
+  :: (Member Jev effects, Member Commands effects, Member Watches effects)
   => Text -> [CommandProbe]
   -> Eff effects (Either ProbeChoiceFailure (Maybe (Either ProbeRefusal ProbeBatch)))
 chosenProbeExample question probes = do
@@ -129,6 +133,7 @@ main = do
 data Trace
   = Started Cmd.CommandSpec
   | Waited Text
+  | Captured Text Int
   | ReadPage Text Cmd.CommandStream Cmd.CommandPosition
   deriving (Eq, Show)
 
@@ -143,19 +148,19 @@ instance Exception ProtocolFailure
 
 data Script = Script
   { scriptedStarts :: [Either Cmd.CommandError Text]
-  , scriptedReceipts :: [(Text, Either Cmd.CommandError Cmd.CommandResult)]
+  , scriptedReceipts :: [(Text, Either ReplyError Cmd.CommandResult)]
   , scriptedReads :: [(Text, Cmd.CommandStream, Cmd.CommandError)]
   }
 
 data Service = Service Script [Trace]
 
-runCommands :: Script -> Eff '[Commands, State.State Service] a -> (a, [Trace])
+runCommands :: Script -> Eff '[Commands, Watches, State.State Service] a -> (a, [Trace])
 runCommands script action =
-  let (result, Service _ trace) = run (State.runState (Service script []) (interpret handle action))
+  let (result, Service _ trace) = run (State.runState (Service script []) (interpret handleWatches (interpret handle action)))
   in (result, reverse trace)
   where
     record event = State.modify (\(Service current events) -> Service current (event : events))
-    handle :: Commands value -> Eff '[State.State Service] value
+    handle :: Commands value -> Eff '[Watches, State.State Service] value
     handle request = case request of
       CommandStartWith spec -> do
         record (Started spec)
@@ -165,14 +170,10 @@ runCommands script action =
           answer : rest -> do
             State.put (Service current {scriptedStarts = rest} events)
             pure answer
-      CommandWaitWith key -> do
-        record (Waited key)
-        Service current _ <- State.get
-        let receipt = case lookup key (scriptedReceipts current) of
-              Just answer -> answer
-              Nothing -> throw (UnknownJobIdentity key)
-        pure (fmap (\result -> CommandObservation result
-          (Left (Cmd.CommandUnavailable "capture transport unavailable"))) receipt)
+      CommandOutputWith key budget -> do
+        if budget /= 1024 * 1024 then throw UnexpectedFiniteEffect else pure ()
+        record (Captured key budget)
+        pure (Left (Cmd.CommandUnavailable "capture transport unavailable"))
       CommandReadWith key stream position -> do
         record (ReadPage key stream position)
         Service current _ <- State.get
@@ -182,6 +183,23 @@ runCommands script action =
           [] -> Right (Cmd.CommandPage key 0 (Text.length key) (Text.length key)
             0 0 True False False False)
       CommandPresentWith _ _ -> pure ()
+      _ -> throw UnexpectedFiniteEffect
+    handleWatches :: Watches value -> Eff '[State.State Service] value
+    handleWatches request = case request of
+      RegisterAwaitWith (AwaitPlan [LeafNode (AwaitCommand key)] 0) -> do
+        State.modify (\(Service current events) -> Service current (Waited key : events))
+        Service current _ <- State.get
+        pure $ case lookup key (scriptedReceipts current) of
+          Just answer -> 1 <$ answer
+          Nothing -> throw (UnknownJobIdentity key)
+      AwaitWatchWith 1 -> pure (RawWatchReady (AwaitDecision [(0, Nothing)] []))
+      ObserveWatchCommandWith 1 [] key -> do
+        Service current _ <- State.get
+        pure $ case lookup key (scriptedReceipts current) of
+          Just (Right result) -> Just (Cmd.CommandCompletion key [] Nothing result)
+          Just (Left _) -> throw UnexpectedFiniteEffect
+          Nothing -> throw (UnknownJobIdentity key)
+      ForgetWatchWith 1 -> pure WatchForgotten
       _ -> throw UnexpectedFiniteEffect
 
 receipt :: Cmd.CommandOutcome -> Cmd.CommandCleanup -> Cmd.CommandResult
@@ -226,7 +244,7 @@ nativeContracts = do
           _ -> False
       _ -> False)
   assert "native output reads are explicitly bounded per stream"
-    (all (\event -> case event of { ReadPage _ _ position -> position == Cmd.OutputSlice 0 4096; _ -> True }) batchTrace)
+    (all (\event -> case event of { ReadPage _ _ position -> position == Cmd.OutputSlice 0 4096; Captured _ budget -> budget == 1024 * 1024; _ -> True }) batchTrace)
   let invalid = (twoProbe) {probeMemory = Cmd.MiB 0}
       (invalidBatch, invalidTrace) = runCommands script (runProbeBatch (ProbeLimits 2 1) [oneProbe, invalid])
   assert "native deferred validation refuses the whole batch before any effect"
@@ -316,25 +334,27 @@ nativeContracts = do
   -- Mutable handler evidence survives the production checked-command error.
   -- The refusal is supplied by the handler, never synthesized by a workflow copy.
   refusalEvidence <- newIORef ([], Nothing)
-  let missingIssue = Cmd.CommandUnavailable "missing"
-      missingHandler :: Commands value -> IO value
-      missingHandler request = case request of
-        CommandWaitWith key -> do
+  let missingIssue = ReplyResultUnavailable
+      missingCommands :: Commands value -> IO value
+      missingCommands _ = throwIO UnexpectedFiniteEffect
+      missingWatches :: Watches value -> IO value
+      missingWatches request = case request of
+        RegisterAwaitWith (AwaitPlan [LeafNode (AwaitCommand key)] 0) -> do
           (prior, _) <- readIORef refusalEvidence
           if not (null prior) then throwIO UnexpectedFiniteEffect else pure ()
           if key /= "original" then throwIO (UnknownJobIdentity key) else pure ()
           writeIORef refusalEvidence ([Waited key], Just (key, missingIssue))
           pure (Left missingIssue)
         _ -> throwIO UnexpectedFiniteEffect
-  failed <- try (runM (interpretM missingHandler
-    (followFailureWith pick "missing original" original probes)))
+  failed <- try (runM (interpretM missingWatches (interpretM missingCommands
+    (followFailureWith pick "missing original" original probes))))
     :: IO (Either ErrorCall FollowupReport)
   assert "native unavailable original fails the cell rather than synthesizing a result"
     (case failed of { Left _ -> True; Right _ -> False })
   observedRefusal <- readIORef refusalEvidence
   assert "native await failure reached the exact original refusal without downstream effects"
     (observedRefusal == ([Waited "original"], Just ("original", missingIssue)))
-  protocol <- try (try (runM (interpretM missingHandler (Cmd.tryStart (Cmd.argv ["true"]))))
+  protocol <- try (try (runM (interpretM missingCommands (Cmd.tryStart (Cmd.argv ["true"]))))
     :: IO (Either ErrorCall (Either Cmd.CommandError Cmd.Job)))
     :: IO (Either ProtocolFailure (Either ErrorCall (Either Cmd.CommandError Cmd.Job)))
   assert "native protocol failures escape the checked-command ErrorCall catch"

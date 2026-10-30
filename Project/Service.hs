@@ -24,7 +24,7 @@ data Service mode = Service
   , history :: mode :- Call () (R.Reply [(Text, Text)])
   } deriving Generic
 
-type ServiceEffects = LocalEffects Service '[Replies, Actor, Notifications, Jev, Commands]
+type ServiceEffects = LocalEffects Service '[Replies, Watches, Actor, Notifications, Jev, Commands]
 
 serve :: (Text -> Eff ServiceEffects Text) -> ActorSpec Service ServiceEffects
 serve procedure = R.definition "procedure-service" (Actor.Selected knownEffects) Service

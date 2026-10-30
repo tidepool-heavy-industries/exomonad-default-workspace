@@ -32,7 +32,7 @@ import Tidepool.Effects.Core (Commands, Jev)
 import Tidepool.Effects.Row (knownEffects)
 
 -- The selected commit is a next read, not a conclusion about the cause.
-inspectHistory :: (Member Jev effects, Member Commands effects) => Text -> Eff effects Text
+inspectHistory :: (Member Jev effects, Member Commands effects, Member Watches effects) => Text -> Eff effects Text
 inspectHistory task = do
   history <- Cmd.quiet (Cmd.run (Cmd.argv
     ["git", "log", "-30", "--no-merges", "--format=%x1e%H%x09%s%n%b", "--stat"]))
@@ -64,7 +64,7 @@ inspectHistory task = do
           Right settled -> let next = J.settledValue settled in next
 
 -- A near tie among summaries calls for stronger evidence, not a lower bar.
-inspectPatches :: (Member Jev effects, Member Commands effects)
+inspectPatches :: (Member Jev effects, Member Commands effects, Member Watches effects)
   => Text -> [Text] -> Eff effects Text
 inspectPatches task candidates = do
   patches <- forM candidates $ \oid -> do
@@ -105,7 +105,7 @@ data Desk mode = Desk
   , findings :: mode :- Call () (R.Reply [(Text, Text)])
   } deriving Generic
 
-type DeskEffects = LocalEffects Desk '[Replies, Actor, Notifications, Jev, Commands]
+type DeskEffects = LocalEffects Desk '[Replies, Watches, Actor, Notifications, Jev, Commands]
 
 desk :: ActorSpec Desk DeskEffects
 desk = R.definition "history-desk" (Actor.Selected knownEffects) Desk

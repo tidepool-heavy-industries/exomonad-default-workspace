@@ -72,7 +72,7 @@ data CheckActor mode = CheckActor
   , checkCompletions :: mode :- Event (Text, FocusedRun, Cmd.CommandResult)
   } deriving Generic
 
-type CheckEffects = LocalEffects CheckActor '[Replies, Actor, Notifications, Commands]
+type CheckEffects = LocalEffects CheckActor '[Replies, Watches, Actor, Notifications, Commands]
 
 -- | Attach even after a job has completed. The caller retains each original
 -- FocusedRun; this actor only observes completion and reads its evidence.

@@ -30,6 +30,7 @@ import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Jev.Operators as J
+import Tidepool.Agent.Watch (Watches)
 import qualified Tidepool.Command as Cmd
 import Tidepool.Effects.Core (Commands, Jev)
 
@@ -168,7 +169,7 @@ startValidProbe probe = do
 -- starts before any is awaited, so independent probes can overlap. Deferred
 -- and outside-budget probes remain explicit and are never submitted here.
 runProbeBatch
-  :: Member Commands effects
+  :: (Member Commands effects, Member Watches effects)
   => ProbeLimits -> [CommandProbe]
   -> Eff effects (Either ProbeRefusal ProbeBatch)
 runProbeBatch limits selected = case planProbeBatch limits selected of
@@ -180,7 +181,7 @@ runProbeBatch limits selected = case planProbeBatch limits selected of
 
 -- Retain bounded pages independently of process outcome. An unavailable job
 -- fails the continuation through Cmd.await; output refusal remains typed data.
-collectProbe :: Member Commands effects => ProbeStart -> Eff effects ProbeObservation
+collectProbe :: (Member Commands effects, Member Watches effects) => ProbeStart -> Eff effects ProbeObservation
 collectProbe started = case started of
   ProbeRejected name refusal -> pure (ProbeStartFailed name refusal)
   ProbeRunning name job -> do
@@ -233,14 +234,14 @@ data FollowupReport = FollowupReport
 -- replaced by a diagnostic outcome. Cancellation, unconfirmed exit or unresolved
 -- cleanup stops further admission. Commands retain supplied authority/budgets.
 followFailure
-  :: (Member Commands effects, Member Jev effects)
+  :: (Member Commands effects, Member Watches effects, Member Jev effects)
   => Text -> Cmd.Job -> [CommandProbe]
   -> Eff effects FollowupReport
 followFailure = followFailureWith chooseNextProbe
 
 -- | A project policy can choose a supplied probe or explicitly abstain.
 followFailureWith
-  :: Member Commands effects
+  :: (Member Commands effects, Member Watches effects)
   => (Text -> [CommandProbe] -> Eff effects (Either ProbeChoiceFailure (Maybe CommandProbe)))
   -> Text -> Cmd.Job -> [CommandProbe]
   -> Eff effects FollowupReport
@@ -272,7 +273,7 @@ diagnosable receipt = Cmd.commandCleanup receipt == Cmd.CommandClean
     _ -> True
 
 continueFollowup
-  :: Member Commands effects
+  :: (Member Commands effects, Member Watches effects)
   => (Text -> [CommandProbe] -> Eff effects (Either ProbeChoiceFailure (Maybe CommandProbe)))
   -> Text -> ProbeObservation -> [ProbeObservation] -> [CommandProbe] -> Int
   -> Eff effects FollowupReport

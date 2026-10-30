@@ -28,7 +28,7 @@ data MergeProbe mode = MergeProbe
   , probeCommand :: mode :- Call [Text] (R.Reply Cmd.RunResult)
   } deriving Generic
 
-type MergeProbeEffects = LocalEffects MergeProbe '[Replies, Commands]
+type MergeProbeEffects = LocalEffects MergeProbe '[Replies, Watches, Commands]
 
 mergeProbe :: ActorSpec MergeProbe MergeProbeEffects
 mergeProbe = R.definition "merge-check-fixture" (Actor.Selected knownEffects) MergeProbe

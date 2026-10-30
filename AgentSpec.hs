@@ -4,6 +4,7 @@
 module AgentSpec (agentSpec) where
 
 import Control.Monad.Freer (Member)
+import Tidepool.Agent.Watch (Watches)
 import Tidepool.Agent.Contract
 import qualified Project.Tools as Tools
 import qualified Project.Shell as Shell
@@ -12,7 +13,7 @@ import Tidepool.Agent.Reply (Replies)
 
 agentSpec ::
   ( KnownToolEffects effects, ConcurrentEffects effects
-  , Member Commands effects, Member Console effects, Member Jev effects
+  , Member Commands effects, Member Watches effects, Member Console effects, Member Jev effects
   , Member Reflect effects
   , Member Replies effects, Member BoundWorktree effects
   ) =>

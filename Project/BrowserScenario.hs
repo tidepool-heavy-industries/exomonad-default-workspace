@@ -22,6 +22,7 @@ import qualified Data.Text as Text
 import Project.TestEvidence
   ( FocusedResult, FocusedSetupIssue, FocusedSpec (..)
   , collectFocused, startFocusedScopedIn )
+import Tidepool.Agent.Watch (Watches)
 import qualified Tidepool.Command as Cmd
 import Tidepool.Effects.Core (Commands)
 
@@ -59,7 +60,7 @@ data BrowserResult = BrowserResult
   } deriving (Show)
 
 runBrowserScenarios
-  :: Member Commands effects
+  :: (Member Commands effects, Member Watches effects)
   => BrowserWorkspace -> BrowserResources -> [BrowserScenario]
   -> Eff effects (Either BrowserRunIssue BrowserResult)
 runBrowserScenarios workspace resources scenarios

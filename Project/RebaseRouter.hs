@@ -84,7 +84,7 @@ data RebaseRouter mode = RebaseRouter
   deriving Generic
 
 type RebaseRouterEffects = R.LocalEffects RebaseRouter
-  '[ Replies, BoundWorktree, WorktreeRegistry, RepoEvent, Commands, Actor
+  '[ Replies, Watches, BoundWorktree, WorktreeRegistry, RepoEvent, Commands, Actor
    , Notifications, Jev, Journal, Sleep
    ]
 

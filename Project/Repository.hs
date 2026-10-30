@@ -15,9 +15,10 @@ import qualified Jev.Operators as J
 import Jev.Operators (Packet ((:=)))
 import qualified Project.History as History
 import qualified Project.Search as Search
+import Tidepool.Agent.Watch (Watches)
 import Tidepool.Effects.Core (Commands, Jev)
 
-answer :: (Member Jev effects, Member Commands effects)
+answer :: (Member Jev effects, Member Commands effects, Member Watches effects)
   => Either Text [Search.Passage] -> Text -> Eff effects Text
 answer docs query = do
   decision <- J.ask1 (J.state (#query := query))

@@ -61,7 +61,7 @@ data SlowCommandWatch mode = SlowCommandWatch
   , slowCompleted :: mode :- Event Cmd.CommandResult
   } deriving Generic
 
-type SlowEffects = R.LocalEffects SlowCommandWatch '[Commands, Notifications, Actor, Jev]
+type SlowEffects = R.LocalEffects SlowCommandWatch '[Commands, Watches, Notifications, Actor, Jev]
 
 -- The diagnostic can use effects but cannot edit the watcher's private state.
 type SlowHandler = Eff SlowEffects

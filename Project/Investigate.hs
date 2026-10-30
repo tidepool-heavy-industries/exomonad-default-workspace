@@ -455,7 +455,7 @@ data Investigation = Investigation
 -- Run a command in the repository and hand back its stdout, quietly: this is
 -- evidence gathering, not work the operator needs to watch scroll past.
 -- git grep exit 1 means no matches; complete stdout stays useful at any exit.
-readCommand :: Member Commands effs => Text -> [Text] -> Eff effs Text
+readCommand :: (Member Commands effs, Member Watches effs) => Text -> [Text] -> Eff effs Text
 readCommand directory args = do
   result <- Cmd.quiet (Cmd.run (Cmd.inDirectory directory (Cmd.argv args)))
   captured <- Cmd.readCommand (Cmd.job result)
@@ -484,7 +484,7 @@ qualifiedSuffixes symbol =
 -- fall back to the definition enclosing the primary site when the diagnostic
 -- names no symbol, as a lint does not.
 planSearch
-  :: Member Commands effs
+  :: (Member Commands effs, Member Watches effs)
   => InvestigationPolicy -> Text -> Text -> Text -> [Text] -> Eff effs (SearchPlan, [Text], [Text])
 planSearch policy directory oid symbol anchors = do
   let grep term = readCommand directory ["git", "grep", "-n", term, oid, "--", "src"]
@@ -549,7 +549,7 @@ backtickedName headline = case Text.splitOn "`" headline of
 -- contract clauses a related test would have to assert, and @output@ the
 -- literal check output.
 investigate
-  :: (Member Jev effs, Member Commands effs)
+  :: (Member Jev effs, Member Commands effs, Member Watches effs)
   => InvestigationPolicy
   -> Text
   -> Text

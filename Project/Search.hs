@@ -15,6 +15,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Jev.Operators as J
 import Jev.Operators (Packet ((:=)))
+import Tidepool.Agent.Watch (Watches)
 import qualified Tidepool.Command as Cmd
 import Tidepool.Effects.Core (Commands, Jev)
 
@@ -25,7 +26,7 @@ data Passage = Passage
   } deriving Show
 
 -- Keep every passage, including its exact address; searches reuse these values.
-load :: Member Commands effects => [Text] -> Eff effects (Either Text [Passage])
+load :: (Member Commands effects, Member Watches effects) => [Text] -> Eff effects (Either Text [Passage])
 load paths = do
   files <- forM paths $ \file -> do
     result <- Cmd.quiet (Cmd.run (Cmd.argv ["cat", "--", file]))
