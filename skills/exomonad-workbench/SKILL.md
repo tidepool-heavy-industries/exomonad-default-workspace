@@ -4,13 +4,13 @@ description: Write Haskell notebook cells that typecheck the first time — Text
 ---
 
 Send one cell of ordinary Haskell: declarations, bindings and expressions. GHC
-splits declarations from statements and checks the whole cell before any effect
+checks the whole cell before any effect
 runs: typecheck rejection installs no bindings and executes nothing. Successful
 cells publish declarations and bindings together. Runtime failure or cancellation
 before publication publishes no cell names; completed effects and independently
-owned captures retain their receipts. Inspect the outcome before retry. Declarations are
-mutually recursive and visible to every statement, but a declaration cannot
-depend on a binding a statement in the same cell introduces. Expressions and
+owned captures retain their receipts. Inspect the outcome before retry.
+Consecutive declarations are mutually recursive. Items follow source order;
+later declaration groups and statements can use earlier bindings. Expressions and
 bindings retain typed values without automatic rendering; declarations and
 bindings persist into later cells in the same notebook generation. The authored
 synchronous reload field publishes source, tools and workspace prompts together;
@@ -19,7 +19,7 @@ them. Call that field or use `reloadSource []` in a synchronous notebook. Surfac
 changes require explicit cache-invalidation approval; see `doc exomonad-agent-spec`.
 Keep reusable definitions in ordinary `.hs` files. Reload does not refresh memory
 or rerun startup. Use `display value` for bounded structured
-output, and `display (show value)` for Haskell's textual `Show` form.
+output, and `display (show value)` for its textual form.
 
 The APIs in this skill are **shipped** and need no project module. Most names
 are already in scope; `Tidepool.Introspection`, `Jev` and `Commands`
@@ -61,6 +61,12 @@ colon commands, no `:{` / `:}`.
 one place `String` appears is `show`, so the conversion you will write over and
 over is `T.pack . show`. Going the other way is `T.unpack`, and it is almost
 always a sign that something should have stayed `Text`.
+
+Notebook `show :: Render a => a -> String` and `tshow :: Render a => a -> Text`
+use `Tidepool.Render`. A polymorphic helper using either needs `Render a` in
+its signature. `Show a` alone cannot choose between the fallback and specialized
+`Render` instances. To keep a helper's `Show a` constraint, import
+`qualified Prelude as P` and use `P.show` (or `T.pack . P.show` for `Text`).
 
 ```haskell
 let attempts = 3 :: Int
